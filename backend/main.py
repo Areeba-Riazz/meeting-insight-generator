@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+# backend/src/main.py
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from backend folder (parent of src)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 import sys
 from functools import lru_cache
 from pathlib import Path
