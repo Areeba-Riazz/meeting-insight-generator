@@ -21,8 +21,10 @@ wheels/
 *.egg
 MANIFEST
 *.pyc
+*.pyc
 
 # Virtual Environment
+.venv/
 .venv/
 env/
 ENV/
