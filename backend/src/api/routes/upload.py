@@ -1,26 +1,32 @@
-import os
-import uuid
+import asyncio
 import json
+import logging
+import os
 import re
-from pathlib import Path
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
-from src.utils.validation import validate_file
+
+from src.agents.action_item_agent import ActionItemAgent
+from src.agents.config import AgentSettings
+from src.agents.decision_agent import DecisionAgent
+from src.agents.sentiment_agent import SentimentAgent
+from src.agents.summary_agent import SummaryAgent
+from src.agents.topic_agent import TopicAgent
+from src.services.agent_orchestrator import AgentOrchestrator
 from src.services.pipeline_store import PipelineStore
+from src.services.transcript_store import TranscriptStore
+from src.services.transcription_service import TranscriptionService
+from src.utils.error_handlers import handle_connection_errors
+from src.utils.validation import validate_file
 
 # Load environment variables from .env file
 load_dotenv()
-from src.services.transcript_store import TranscriptStore
-from src.services.transcription_service import TranscriptionService
-from src.services.agent_orchestrator import AgentOrchestrator
-from src.agents.summary_agent import SummaryAgent
-from src.agents.topic_agent import TopicAgent
-from src.agents.decision_agent import DecisionAgent
-from src.agents.action_item_agent import ActionItemAgent
-from src.agents.sentiment_agent import SentimentAgent
-from src.agents.config import AgentSettings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -135,51 +141,134 @@ def create_metadata_file(
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
 async def process_meeting(meeting_id: str, audio_path: Path) -> None:
+    """
+    Process meeting with robust error handling and connection resilience.
+    
+    Handles:
+    - Network timeouts during transcription
+    - Agent processing failures with graceful degradation
+    - File I/O errors with retry logic
+    """
     try:
         # Processing starts immediately after upload completes
-        pipeline_store.set_status(meeting_id, "processing", progress=0, stage="Initializing processing pipeline")
+        pipeline_store.set_status(
+            meeting_id, 
+            "processing", 
+            progress=0, 
+            stage="Initializing processing pipeline"
+        )
+        logger.info(f"[Upload] Starting processing for meeting {meeting_id}")
 
         def update_status(stage: str, progress: float = None, stage_desc: str = None) -> None:
-            pipeline_store.set_status(meeting_id, stage, progress=progress, stage=stage_desc)
+            try:
+                pipeline_store.set_status(meeting_id, stage, progress=progress, stage=stage_desc)
+            except Exception as e:
+                logger.warning(f"[Upload] Error updating status: {e}")
 
         # Initialize agents
-        agent_settings = AgentSettings()
-        agents = [
-            SummaryAgent(),
-            TopicAgent(),
-            DecisionAgent(),
-            ActionItemAgent(),
-            SentimentAgent(),
-        ]
+        try:
+            agent_settings = AgentSettings()
+            agents = [
+                SummaryAgent(),
+                TopicAgent(),
+                DecisionAgent(),
+                ActionItemAgent(),
+                SentimentAgent(),
+            ]
+            logger.info(f"[Upload] Initialized {len(agents)} agents")
+        except Exception as e:
+            logger.error(f"[Upload] Failed to initialize agents: {e}")
+            update_status("error", progress=0, stage_desc=f"Failed to initialize: {str(e)[:100]}")
+            return
         
         # Create orchestrator - it handles both transcription and AI agents
-        orchestrator = AgentOrchestrator(
-            transcription_service=transcription_service,
-            agents=agents
-        )
+        try:
+            orchestrator = AgentOrchestrator(
+                transcription_service=transcription_service,
+                agents=agents
+            )
+        except Exception as e:
+            logger.error(f"[Upload] Failed to create orchestrator: {e}")
+            update_status("error", progress=0, stage_desc=f"Pipeline initialization failed: {str(e)[:100]}")
+            return
         
-        # Run full pipeline (transcription + AI agents) with real-time status updates
-        results = await orchestrator.process(meeting_id, audio_path, on_status=update_status)
+        # Run full pipeline with connection error handling
+        try:
+            results = await asyncio.wait_for(
+                orchestrator.process(meeting_id, audio_path, on_status=update_status),
+                timeout=600  # 10 minute timeout for entire pipeline
+            )
+            logger.info(f"[Upload] Pipeline completed successfully for {meeting_id}")
+        except asyncio.TimeoutError:
+            logger.error(f"[Upload] Pipeline timeout for {meeting_id}")
+            update_status(
+                "error", 
+                progress=0, 
+                stage_desc="Processing timeout - operation took too long"
+            )
+            return
+        except (ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError) as e:
+            logger.error(f"[Upload] Pipeline connection error for {meeting_id}: {e}")
+            update_status(
+                "error",
+                progress=0,
+                stage_desc=f"Connection lost during processing: {type(e).__name__}"
+            )
+            return
+        except Exception as e:
+            logger.error(f"[Upload] Pipeline failed for {meeting_id}: {e}", exc_info=True)
+            update_status(
+                "error",
+                progress=0,
+                stage_desc=f"Processing failed: {str(e)[:100]}"
+            )
+            return
         
-        # Step 3: Save results (transcript + agent insights)
+        # Step 3: Save results with retries
         update_status("saving_results", progress=95, stage_desc="Saving results")
-        pipeline_store.set_result(meeting_id, results)
         
-        # Save insights to JSON file in storage
+        try:
+            pipeline_store.set_result(meeting_id, results)
+            logger.info(f"[Upload] Saved results to pipeline store for {meeting_id}")
+        except Exception as e:
+            logger.warning(f"[Upload] Error saving to pipeline store: {e}")
+        
+        # Save insights to JSON file in storage with retries
         meeting_dir = Path("storage") / meeting_id
         insights_file = meeting_dir / "insights.json"
-        try:
-            with open(insights_file, "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, ensure_ascii=False, default=str)
-            print(f"[Upload] Saved insights to {insights_file}")
-        except Exception as e:
-            print(f"[Upload] Error saving insights to file: {e}")
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with open(insights_file, "w", encoding="utf-8") as f:
+                    json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+                logger.info(f"[Upload] Saved insights to {insights_file}")
+                break
+            except IOError as e:
+                logger.warning(f"[Upload] Error saving insights (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+                else:
+                    logger.error(f"[Upload] Failed to save insights after {max_retries} attempts")
+            except Exception as e:
+                logger.error(f"[Upload] Unexpected error saving insights: {e}")
+                break
         
         pipeline_store.set_status(meeting_id, "completed", progress=100, stage="Completed")
-    except Exception as e:  # pragma: no cover - basic error propagation
-        pipeline_store.set_status(meeting_id, f"error: {e}", progress=0, stage="Error")
+        logger.info(f"[Upload] Meeting {meeting_id} processing completed")
+        
+    except Exception as e:  # pragma: no cover - catch-all error handling
+        logger.error(f"[Upload] Unexpected error in process_meeting: {e}", exc_info=True)
+        pipeline_store.set_status(
+            meeting_id, 
+            f"error: {type(e).__name__}", 
+            progress=0, 
+            stage=str(e)[:100]
+        )
     finally:
         pipeline_store.release_processing()
+        logger.info(f"[Upload] Released processing lock for {meeting_id}")
+
 
 
 @router.post("/upload")
@@ -187,61 +276,174 @@ async def upload_meeting_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
 ):
+    """
+    Upload meeting audio file with connection error handling.
+    
+    Handles:
+    - File read/write errors with retries
+    - Validation failures with cleanup
+    - Graceful error responses
+    """
     if not file.filename:
+        logger.warning("[Upload] Upload request with no filename")
         raise HTTPException(status_code=400, detail="Filename is required")
 
     # Check if already processing - reject if so (sequential processing only)
     if pipeline_store.is_processing():
+        logger.warning("[Upload] Rejected - another file is being processed")
         raise HTTPException(
             status_code=409,
             detail="Another file is currently being processed. Please wait for it to complete."
         )
 
-    # Generate meeting ID from filename and timestamp
-    meeting_id, meeting_uuid = generate_meeting_id(file.filename)
-    
-    # Set uploading status - track file operations
-    pipeline_store.set_status(meeting_id, "uploading", progress=10, stage="Creating meeting directory")
-    meeting_dir = Path("storage") / meeting_id / "audio"
-    meeting_dir.mkdir(parents=True, exist_ok=True)
-    audio_path = meeting_dir / file.filename
-
-    pipeline_store.set_status(meeting_id, "uploading", progress=40, stage="Saving video file")
-    content = await file.read()
-    with audio_path.open("wb") as f:
-        f.write(content)
-    
-    # Create metadata.json file
-    pipeline_store.set_status(meeting_id, "uploading", progress=70, stage="Creating metadata")
-    create_metadata_file(
-        meeting_dir=meeting_dir.parent,
-        meeting_uuid=meeting_uuid,
-        original_filename=file.filename,
-        folder_name=meeting_id,
-        file_size=len(content),
-        content_type=file.content_type
-    )
-
-    # Validate file type/size
-    pipeline_store.set_status(meeting_id, "uploading", progress=90, stage="Validating file")
     try:
-        validate_file(audio_path, content_type=file.content_type, max_mb=500)
-    except ValueError as e:
-        audio_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # Acquire processing lock
-    acquired = pipeline_store.acquire_processing()
-    if not acquired:
-        audio_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=409,
-            detail="Another file is currently being processed. Please wait for it to complete."
+        # Generate meeting ID from filename and timestamp
+        meeting_id, meeting_uuid = generate_meeting_id(file.filename)
+        logger.info(f"[Upload] New upload: {meeting_id} - {file.filename}")
+        
+        # Set uploading status - track file operations
+        pipeline_store.set_status(
+            meeting_id, 
+            "uploading", 
+            progress=10, 
+            stage="Creating meeting directory"
         )
+        
+        # Create directory with error handling
+        try:
+            meeting_dir = Path("storage") / meeting_id / "audio"
+            meeting_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = meeting_dir / file.filename
+        except OSError as e:
+            logger.error(f"[Upload] Failed to create directory for {meeting_id}: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to create storage directory"
+            )
 
-    # Upload complete - processing will start immediately in background
-    pipeline_store.set_status(meeting_id, "uploading", progress=100, stage="Upload complete")
-    background_tasks.add_task(process_meeting, meeting_id, audio_path)
+        # Read file with timeout and error handling
+        pipeline_store.set_status(
+            meeting_id, 
+            "uploading", 
+            progress=40, 
+            stage="Saving video file"
+        )
+        
+        try:
+            # Use timeout to prevent hanging on large files
+            content = await asyncio.wait_for(
+                file.read(),
+                timeout=300  # 5 minute timeout for file read
+            )
+            logger.info(f"[Upload] Read {len(content)} bytes for {meeting_id}")
+        except asyncio.TimeoutError:
+            logger.error(f"[Upload] File read timeout for {meeting_id}")
+            raise HTTPException(
+                status_code=408,
+                detail="File upload timeout - file is too large or connection is slow"
+            )
+        except Exception as e:
+            logger.error(f"[Upload] Error reading file for {meeting_id}: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to read uploaded file"
+            )
 
-    return {"meeting_id": meeting_id, "status": "uploading"}
+        # Write file with retries
+        max_retries = 3
+        write_success = False
+        for attempt in range(max_retries):
+            try:
+                with audio_path.open("wb") as f:
+                    f.write(content)
+                write_success = True
+                logger.info(f"[Upload] Wrote file to {audio_path}")
+                break
+            except IOError as e:
+                logger.warning(
+                    f"[Upload] File write error attempt {attempt + 1}/{max_retries}: {e}"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+                else:
+                    logger.error(f"[Upload] Failed to write file after {max_retries} attempts")
+            except Exception as e:
+                logger.error(f"[Upload] Unexpected error writing file: {e}")
+                break
 
+        if not write_success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to save uploaded file to storage"
+            )
+        
+        # Create metadata.json file
+        pipeline_store.set_status(
+            meeting_id, 
+            "uploading", 
+            progress=70, 
+            stage="Creating metadata"
+        )
+        
+        try:
+            create_metadata_file(
+                meeting_dir=meeting_dir.parent,
+                meeting_uuid=meeting_uuid,
+                original_filename=file.filename,
+                folder_name=meeting_id,
+                file_size=len(content),
+                content_type=file.content_type
+            )
+            logger.info(f"[Upload] Created metadata for {meeting_id}")
+        except Exception as e:
+            logger.warning(f"[Upload] Error creating metadata for {meeting_id}: {e}")
+            # Non-critical - continue anyway
+
+        # Validate file type/size
+        pipeline_store.set_status(
+            meeting_id, 
+            "uploading", 
+            progress=90, 
+            stage="Validating file"
+        )
+        
+        try:
+            validate_file(audio_path, content_type=file.content_type, max_mb=500)
+            logger.info(f"[Upload] File validation passed for {meeting_id}")
+        except ValueError as e:
+            logger.warning(f"[Upload] File validation failed for {meeting_id}: {e}")
+            # Clean up invalid file
+            try:
+                audio_path.unlink(missing_ok=True)
+            except Exception as cleanup_error:
+                logger.warning(f"[Upload] Error cleaning up invalid file: {cleanup_error}")
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # Acquire processing lock
+        acquired = pipeline_store.acquire_processing()
+        if not acquired:
+            logger.warning(f"[Upload] Failed to acquire processing lock for {meeting_id}")
+            try:
+                audio_path.unlink(missing_ok=True)
+            except Exception as cleanup_error:
+                logger.warning(f"[Upload] Error cleaning up during lock failure: {cleanup_error}")
+            raise HTTPException(
+                status_code=409,
+                detail="Another file is currently being processed. Please wait for it to complete."
+            )
+
+        # Upload complete - processing will start immediately in background
+        pipeline_store.set_status(meeting_id, "uploading", progress=100, stage="Upload complete")
+        background_tasks.add_task(process_meeting, meeting_id, audio_path)
+        
+        logger.info(f"[Upload] File uploaded successfully for {meeting_id}, starting background processing")
+        return {"meeting_id": meeting_id, "status": "uploading"}
+        
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except Exception as e:
+        logger.error(f"[Upload] Unexpected error during file upload: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error during file upload"
+        )
