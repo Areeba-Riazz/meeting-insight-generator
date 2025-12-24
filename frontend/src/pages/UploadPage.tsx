@@ -22,16 +22,16 @@ type Status =
   | `error: ${string}`
   | string;
 
-const STAGES: Array<{ key: Status; label: string; helper: string }> = [
-  { key: "queued", label: "Queued", helper: "Preparing job" },
-  { key: "loading_model", label: "Loading model", helper: "Loading Whisper model" },
-  { key: "extracting_audio", label: "Extracting audio", helper: "Pulling audio from file" },
-  { key: "transcribing", label: "Transcribing", helper: "Running Whisper" },
-  { key: "diarizing", label: "Diarizing", helper: "Separating speakers" },
-  { key: "saving_transcript", label: "Saving transcript", helper: "Persisting output" },
-  { key: "generating_insights", label: "Generating insights", helper: "Running AI agents" },
-  { key: "saving_results", label: "Saving results", helper: "Finalizing data" },
-  { key: "completed", label: "Completed", helper: "Ready to view" },
+const STAGES: Array<{ key: Status; label: string; helper: string; icon: string }> = [
+  { key: "queued", label: "Queued", helper: "Preparing job", icon: "⏳" },
+  { key: "loading_model", label: "Loading Model", helper: "Loading Whisper AI model", icon: "🤖" },
+  { key: "extracting_audio", label: "Extracting Audio", helper: "Processing media file", icon: "🎵" },
+  { key: "transcribing", label: "Transcribing", helper: "Converting speech to text", icon: "✍️" },
+  { key: "diarizing", label: "Identifying Speakers", helper: "Detecting who said what", icon: "👥" },
+  { key: "saving_transcript", label: "Saving Transcript", helper: "Storing transcription", icon: "💾" },
+  { key: "generating_insights", label: "Analyzing Content", helper: "Running AI analysis", icon: "🧠" },
+  { key: "saving_results", label: "Finalizing", helper: "Saving insights", icon: "📊" },
+  { key: "completed", label: "Completed", helper: "Ready to view", icon: "✅" },
 ];
 
 const progressForStatus = (status: Status) => {
@@ -64,16 +64,26 @@ export default function UploadPage() {
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [progress, setProgress] = useState<number>(0);
+  const [stage, setStage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const handleUpload = useCallback(async (file: File) => {
     setError(null);
     setMeetingId(null);
+    setUploadProgress(0);
+    setProgress(0);
+    setStage(null);
     setIsUploading(true);
     try {
-      const resp = await uploadMeeting(file);
+      const resp = await uploadMeeting(file, (progressPercent: number) => {
+        setUploadProgress(progressPercent);
+      });
       setMeetingId(resp.meeting_id);
       setStatus(resp.status as Status);
+      // Upload complete - transition to processing immediately
+      setIsUploading(false);
     } catch (err: any) {
       const errorMessage = err?.message || "Upload failed";
       const isConnectionError =
@@ -88,12 +98,12 @@ export default function UploadPage() {
         showError(cleanMessage || "Backend server is not connected. Please check if the server is running.");
         setStatus("idle");
         setMeetingId(null);
+        setIsUploading(false);
       } else {
         setError(errorMessage);
         setStatus("idle");
+        setIsUploading(false);
       }
-    } finally {
-      setIsUploading(false);
     }
   }, [showError]);
 
@@ -106,12 +116,24 @@ export default function UploadPage() {
       try {
         const resp = await getStatus(meetingId);
         if (cancelled) return;
-        console.log(`[Frontend] Polled status: ${resp.status}`);
+
+        console.log(`[Frontend] Polled status: ${resp.status}, progress: ${resp.progress}%, stage: ${resp.stage}`);
         setStatus(resp.status as Status);
+        
+        // Use backend progress if available, otherwise calculate from status
+        if (resp.progress !== undefined && resp.progress !== null) {
+          setProgress(resp.progress);
+        } else {
+          setProgress(progressForStatus(resp.status as Status));
+        }
+        
+        if (resp.stage) {
+          setStage(resp.stage);
+        }
         if (resp.status === "completed") {
           navigate(`/insights/${meetingId}`);
         } else if (!shouldStop(resp.status)) {
-          setTimeout(poll, 500);
+          setTimeout(poll, 1000);  // Poll every 1 second for real-time updates
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -121,6 +143,7 @@ export default function UploadPage() {
       }
     };
 
+    // Start polling immediately after upload completes
     poll();
     return () => { cancelled = true; };
   }, [meetingId, navigate]);
@@ -328,12 +351,12 @@ export default function UploadPage() {
                     </div>
                   )}
                   <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: "#111827", margin: 0 }}>
-                    {isUploading ? "Uploading..." : stageForStatus(status)}
+                    {isUploading ? "Uploading File..." : stageForStatus(status)}
                   </h2>
                 </div>
-                {!isUploading && helperForStatus(status) && (
+                {!isUploading && (
                   <p style={{ fontSize: "0.9rem", color: "#6b7280", margin: 0, marginLeft: "3.25rem" }}>
-                    {helperForStatus(status)}
+                    {stage || helperForStatus(status)}
                   </p>
                 )}
               </div>
@@ -343,7 +366,7 @@ export default function UploadPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
                   <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#6b7280" }}>Progress</span>
                   <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#3b82f6" }}>
-                    {isUploading ? "..." : `${progressForStatus(status)}%`}
+                    {isUploading ? `${uploadProgress}%` : `${Math.round(progress)}%`}
                   </span>
                 </div>
                 <div style={{ background: "#e5e7eb", height: "10px", borderRadius: "999px", overflow: "hidden" }}>
@@ -357,7 +380,7 @@ export default function UploadPage() {
                     }} />
                   ) : (
                     <div style={{
-                      width: `${progressForStatus(status)}%`,
+                      width: isUploading ? `${uploadProgress}%` : `${Math.round(progress)}%`,
                       height: "100%",
                       background: status.startsWith("error")
                         ? "linear-gradient(90deg, #ef4444 0%, #dc2626 100%)"
@@ -370,6 +393,84 @@ export default function UploadPage() {
                   )}
                 </div>
               </div>
+
+              {/* Stage Stepper */}
+              {!isUploading && isProcessing && (
+                <div style={{ marginBottom: "2rem" }}>
+                  <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "1rem" }}>
+                    Processing Stages
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {STAGES.filter(s => s.key !== "completed").map((stageItem, idx) => {
+                      const currentStageIdx = STAGES.findIndex(s => s.key === status);
+                      const isCurrentStage = stageItem.key === status;
+                      const isPastStage = idx < currentStageIdx;
+                      const isFutureStage = idx > currentStageIdx;
+                      
+                      return (
+                        <div
+                          key={stageItem.key}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.75rem",
+                            padding: "0.75rem 1rem",
+                            background: isCurrentStage ? "#eff6ff" : isPastStage ? "#f0fdf4" : "#fafafa",
+                            border: `1px solid ${isCurrentStage ? "#3b82f6" : isPastStage ? "#86efac" : "#e5e7eb"}`,
+                            borderRadius: "8px",
+                            transition: "all 0.3s ease",
+                            opacity: isFutureStage ? 0.5 : 1
+                          }}
+                        >
+                          <div style={{
+                            width: "2rem",
+                            height: "2rem",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#e5e7eb",
+                            borderRadius: "6px",
+                            fontSize: "1rem",
+                            flexShrink: 0,
+                            transition: "all 0.3s ease"
+                          }}>
+                            {isPastStage ? "✓" : stageItem.icon}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: "0.875rem",
+                              fontWeight: 600,
+                              color: isCurrentStage ? "#1e40af" : isPastStage ? "#065f46" : "#6b7280",
+                              marginBottom: "0.125rem"
+                            }}>
+                              {stageItem.label}
+                              {isCurrentStage && (
+                                <span style={{
+                                  marginLeft: "0.5rem",
+                                  display: "inline-flex",
+                                  alignItems: "center"
+                                }}>
+                                  <Loader2 style={{
+                                    width: "0.875rem",
+                                    height: "0.875rem",
+                                    animation: "spin 1s linear infinite"
+                                  }} />
+                                </span>
+                              )}
+                            </div>
+                            <div style={{
+                              fontSize: "0.75rem",
+                              color: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#9ca3af"
+                            }}>
+                              {isCurrentStage && stage ? stage : stageItem.helper}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Meeting ID */}
               {meetingId && (
@@ -389,57 +490,6 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {/* Processing Steps */}
-              {!isUploading && !status.startsWith("error") && status !== "completed" && status !== "idle" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "2rem" }}>
-                  {STAGES.map((stage, idx) => {
-                    const isActive = stage.key === status;
-                    const isPast = STAGES.findIndex(s => s.key === status) > idx;
-
-                    return (
-                      <div key={stage.key} style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.75rem",
-                        padding: "0.875rem 1rem",
-                        background: isActive ? "#eff6ff" : "transparent",
-                        borderRadius: "8px",
-                        border: isActive ? "1px solid #bfdbfe" : "1px solid transparent",
-                        transition: "all 0.2s ease"
-                      }}>
-                        <div style={{
-                          width: "2rem",
-                          height: "2rem",
-                          borderRadius: "50%",
-                          background: isPast
-                            ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
-                            : isActive
-                              ? "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
-                              : "#e5e7eb",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                          transition: "all 0.2s ease"
-                        }}>
-                          {isPast ? (
-                            <CheckCircle2 style={{ width: "1rem", height: "1rem", color: "white" }} />
-                          ) : isActive ? (
-                            <div style={{ width: "0.5rem", height: "0.5rem", background: "white", borderRadius: "50%" }} />
-                          ) : (
-                            <div style={{ width: "0.5rem", height: "0.5rem", background: "#9ca3af", borderRadius: "50%" }} />
-                          )}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: "0.9rem", fontWeight: 500, color: isActive || isPast ? "#111827" : "#6b7280" }}>
-                            {stage.label}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
 
               {/* Error State */}
               {status.startsWith("error") && (

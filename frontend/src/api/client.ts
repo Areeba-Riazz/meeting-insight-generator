@@ -2,46 +2,62 @@ import type { UploadResponse, StatusResponse, InsightsResponse } from "../types/
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
-export async function uploadMeeting(file: File): Promise<UploadResponse> {
+export async function uploadMeeting(
+  file: File,
+  onProgress?: (progress: number) => void
+): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/api/v1/upload`, {
-      method: "POST",
-      body: formData,
-    });
-  } catch (error: any) {
-    // Network error - backend not connected
-    // Check for various network error patterns
-    const isNetworkError =
-      error.name === "TypeError" ||
-      error.message?.includes("Failed to fetch") ||
-      error.message?.includes("NetworkError") ||
-      error.message?.includes("Network request failed") ||
-      error.code === "ERR_NETWORK" ||
-      error.code === "ECONNREFUSED";
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
 
-    if (isNetworkError) {
-      throw new Error("CONNECTION_ERROR: Backend server is not connected. Please check if the server is running.");
-    }
-    throw error;
-  }
-
-  if (!res.ok) {
-    let errorMessage = `Upload failed: ${res.statusText}`;
-    try {
-      const errorData = await res.json();
-      if (errorData.detail) {
-        errorMessage = errorData.detail;
+    // Track upload progress
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percentComplete = Math.round((event.loaded / event.total) * 100);
+        onProgress(percentComplete);
       }
-    } catch {
-      // If response is not JSON, use default message
-    }
-    throw new Error(errorMessage);
-  }
-  return res.json();
+    };
+
+    // Handle completion
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          resolve(response);
+        } catch (error) {
+          reject(new Error("Failed to parse response"));
+        }
+      } else {
+        // Handle error responses
+        let errorMessage = `Upload failed: ${xhr.statusText}`;
+        try {
+          const errorData = JSON.parse(xhr.responseText);
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          }
+        } catch {
+          // If response is not JSON, use default message
+        }
+        reject(new Error(errorMessage));
+      }
+    };
+
+    // Handle network errors
+    xhr.onerror = () => {
+      reject(new Error("CONNECTION_ERROR: Backend server is not connected. Please check if the server is running."));
+    };
+
+    // Handle timeout
+    xhr.ontimeout = () => {
+      reject(new Error("Upload timeout. Please try again."));
+    };
+
+    // Open and send request
+    xhr.open("POST", `${API_BASE}/api/v1/upload`);
+    xhr.send(formData);
+  });
 }
 
 export async function getStatus(meetingId: string): Promise<StatusResponse> {

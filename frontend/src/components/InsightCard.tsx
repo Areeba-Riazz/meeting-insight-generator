@@ -16,3 +16,4 @@ export function InsightCard({ title, children }: InsightCardProps) {
 
 
 
+

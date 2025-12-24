@@ -5,9 +5,13 @@ import re
 from pathlib import Path
 from datetime import datetime
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from src.utils.validation import validate_file
 from src.services.pipeline_store import PipelineStore
+
+# Load environment variables from .env file
+load_dotenv()
 from src.services.transcript_store import TranscriptStore
 from src.services.transcription_service import TranscriptionService
 from src.services.agent_orchestrator import AgentOrchestrator
@@ -132,19 +136,11 @@ def create_metadata_file(
 
 async def process_meeting(meeting_id: str, audio_path: Path) -> None:
     try:
-        pipeline_store.set_status(meeting_id, "processing")
+        pipeline_store.set_status(meeting_id, "processing", progress=5, stage="Initializing")
 
-        def update_status(stage: str) -> None:
-            pipeline_store.set_status(meeting_id, stage)
+        def update_status(stage: str, progress: float = None, stage_desc: str = None) -> None:
+            pipeline_store.set_status(meeting_id, stage, progress=progress, stage=stage_desc)
 
-        # Step 1: Transcription + Diarization
-        transcription = transcription_service.transcribe(
-            audio_path, meeting_id=meeting_id, on_status=update_status
-        )
-        
-        # Step 2: Run AI Agents
-        update_status("generating_insights")
-        
         # Initialize agents
         agent_settings = AgentSettings()
         agents = [
@@ -155,31 +151,21 @@ async def process_meeting(meeting_id: str, audio_path: Path) -> None:
             SentimentAgent(),
         ]
         
-        # Create orchestrator and run agents
+        # Create orchestrator - it handles both transcription and AI agents
         orchestrator = AgentOrchestrator(
             transcription_service=transcription_service,
             agents=agents
         )
         
-        # Run agents with the transcription result
-        agent_results = await orchestrator.process(meeting_id, audio_path)
+        # Run full pipeline (transcription + AI agents) with real-time status updates
+        results = await orchestrator.process(meeting_id, audio_path, on_status=update_status)
         
         # Step 3: Save results (transcript + agent insights)
-        update_status("saving_results")
-        pipeline_store.set_result(
-            meeting_id,
-            {
-                "transcript": {
-                    "text": transcription.text,
-                    "segments": [seg.__dict__ for seg in transcription.segments],
-                    "model": transcription.model,
-                },
-                **agent_results  # Merge agent results (summary, topics, decisions, etc.)
-            },
-        )
-        pipeline_store.set_status(meeting_id, "completed")
+        update_status("saving_results", progress=95, stage_desc="Saving results")
+        pipeline_store.set_result(meeting_id, results)
+        pipeline_store.set_status(meeting_id, "completed", progress=100, stage="Completed")
     except Exception as e:  # pragma: no cover - basic error propagation
-        pipeline_store.set_status(meeting_id, f"error: {e}")
+        pipeline_store.set_status(meeting_id, f"error: {e}", progress=0, stage="Error")
     finally:
         pipeline_store.release_processing()
 
@@ -235,7 +221,7 @@ async def upload_meeting_file(
             detail="Another file is currently being processed. Please wait for it to complete."
         )
 
-    pipeline_store.set_status(meeting_id, "queued")
+    pipeline_store.set_status(meeting_id, "queued", progress=0, stage="Queued")
     background_tasks.add_task(process_meeting, meeting_id, audio_path)
 
     return {"meeting_id": meeting_id, "status": "queued"}

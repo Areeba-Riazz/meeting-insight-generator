@@ -81,6 +81,7 @@ export function InsightsViewer({ insights }: Props) {
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            type="button"
             onClick={() => setActiveTab(tab.id)}
             style={{
               display: "flex",
@@ -150,44 +151,62 @@ export function InsightsViewer({ insights }: Props) {
                 overflowY: "auto"
               }}>
                 {transcript.segments.map((seg: any, idx: number) => {
-                  const speaker = seg.speaker || "Unknown";
+                  const speaker = seg.speaker || "Unknown Speaker";
                   const speakerColor = getSpeakerColor(speaker);
-                  const prevSpeaker = idx > 0 ? (transcript.segments?.[idx - 1]?.speaker || "Unknown") : null;
+                  const prevSpeaker = idx > 0 ? (transcript.segments?.[idx - 1]?.speaker || "Unknown Speaker") : null;
                   const showSpeakerHeader = speaker !== prevSpeaker;
 
                   return (
-                    <div key={idx} style={{ marginBottom: showSpeakerHeader ? "1.5rem" : "0.5rem" }}>
+                    <div key={idx} style={{ marginBottom: "0.75rem" }}>
                       {showSpeakerHeader && (
                         <div style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: "0.5rem",
+                          gap: "0.75rem",
                           marginBottom: "0.5rem",
                           paddingTop: idx > 0 ? "1rem" : "0",
                           borderTop: idx > 0 ? "1px solid #e5e7eb" : "none"
                         }}>
                           <div style={{
-                            padding: "0.25rem 0.75rem",
+                            padding: "0.375rem 0.875rem",
                             background: speakerColor,
                             color: "white",
                             borderRadius: "6px",
                             fontSize: "0.875rem",
-                            fontWeight: 600
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.375rem"
                           }}>
+                            <span>👤</span>
                             {speaker}
-                          </div>
-                          <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                            {formatTime(seg.start)} - {formatTime(seg.end)}
                           </div>
                         </div>
                       )}
                       <div style={{
-                        paddingLeft: "1rem",
-                        fontSize: "0.95rem",
-                        lineHeight: 1.7,
-                        color: "#374151"
+                        display: "flex",
+                        gap: "0.75rem",
+                        paddingLeft: showSpeakerHeader ? "0rem" : "1rem"
                       }}>
-                        {seg.text}
+                        <div style={{
+                          fontSize: "0.7rem",
+                          color: "#9ca3af",
+                          fontFamily: "monospace",
+                          fontWeight: 500,
+                          minWidth: "80px",
+                          paddingTop: "0.25rem",
+                          flexShrink: 0
+                        }}>
+                          [{formatTime(seg.start)}]
+                        </div>
+                        <div style={{
+                          fontSize: "0.95rem",
+                          lineHeight: 1.7,
+                          color: "#374151",
+                          flex: 1
+                        }}>
+                          {seg.text}
+                        </div>
                       </div>
                     </div>
                   );
