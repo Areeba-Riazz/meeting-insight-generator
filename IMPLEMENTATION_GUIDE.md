@@ -11,6 +11,8 @@
 8. [Testing Strategy](#testing-strategy)
 9. [Deployment Guide](#deployment-guide)
 
+
+
 ---
 
 ## Technology Stack
@@ -364,17 +366,17 @@ Each agent is a LangChain agent with specific tools and prompts:
 
 #### 2.2 Agent Framework Setup
 - [ ] Set up LangChain configuration (full prompts/tooling)
-- [x] Create base agent class (stub)
+- [x] Create base agent class
 - [x] Configure LLM connections (Mistral via LangChain with mock fallback)
-- [ ] Implement prompt templates (currently minimal)
-- [ ] Create agent execution framework (partial via orchestrator)
+- [x] Implement prompt templates (initial prompts added)
+- [x] Create agent execution framework (orchestrator with timeouts/parallel)
 
 #### 2.3 Individual Agents
-- [x] Implement Topic Agent (stub placeholder)
-- [x] Implement Decision Agent (stub placeholder)
-- [x] Implement Action Item Agent (stub placeholder)
-- [x] Implement Sentiment Agent (stub placeholder)
-- [x] Implement Summary Agent (stub placeholder)
+- [x] Implement Topic Agent (LLM with prompt + fallback parsing)
+- [x] Implement Decision Agent (LLM with prompt + fallback parsing)
+- [x] Implement Action Item Agent (LLM with prompt + fallback parsing)
+- [x] Implement Sentiment Agent (LLM with prompt)
+- [x] Implement Summary Agent (LLM with prompt)
 - [ ] Unit test each agent
 
 #### 2.4 Orchestration & API (pipeline-first, in-memory)
@@ -383,6 +385,7 @@ Each agent is a LangChain agent with specific tools and prompts:
 - [x] Add status endpoint (in-memory state)
 - [x] Add insights endpoint (in-memory results)
 - [x] Add file-type/size validation; basic error handling
+- [x] Support video via audio extraction (mp4/mkv/mov) — needs explicit validation tests
 
 ### Phase 3: Integration & Orchestration (Week 3)
 

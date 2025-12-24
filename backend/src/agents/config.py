@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AgentSettings(BaseSettings):
@@ -12,9 +12,12 @@ class AgentSettings(BaseSettings):
     timeout: int = 30
     max_retries: int = 2
     model_type: str = "mistral"  # options: mistral, llama, mock
+    mistral_api_key: str | None = None
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="allow",  # tolerate unrelated env vars
+    )
 

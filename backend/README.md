@@ -20,12 +20,12 @@ See the main [README.md](../README.md) and [IMPLEMENTATION_GUIDE.md](../IMPLEMEN
 # From project root, activate virtual environment
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# Run development server (from root directory)
-uvicorn backend.src.main:app --reload --host 0.0.0.0 --port 8000
-
-# Or from backend directory
+# From backend directory
 cd backend
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# One-line launcher
+python main.py
 ```
 
 ## API Documentation

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-from backend.src.utils.audio_utils import preprocess_audio
-from backend.src.services.transcript_store import TranscriptStore
+from src.utils.audio_utils import preprocess_audio
+
+if TYPE_CHECKING:
+    from src.services.transcript_store import TranscriptStore
 
 
 @dataclass
@@ -37,7 +39,7 @@ class TranscriptionService:
         device: str = "cpu",
         diarization_enabled: bool = False,
         diarization_token: Optional[str] = None,
-        transcript_store: Optional[TranscriptStore] = None,
+        transcript_store: "Optional[TranscriptStore]" = None,
     ) -> None:
         self.model_name = model_name
         self.device = device
@@ -64,10 +66,18 @@ class TranscriptionService:
                 return None
             if not self.diarization_token:
                 return None
-            self._diarization_pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                use_auth_token=self.diarization_token,
-            )
+            # pyannote.audio 4.0+ uses 'token' instead of 'use_auth_token'
+            try:
+                self._diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    token=self.diarization_token,
+                )
+            except TypeError:
+                # Fallback for older versions that use 'use_auth_token'
+                self._diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=self.diarization_token,
+                )
         return self._diarization_pipeline
 
     def _apply_diarization(
@@ -107,14 +117,42 @@ class TranscriptionService:
             for seg in whisper_segments
         ]
 
-    def transcribe(self, audio_path: Path, meeting_id: Optional[str] = None) -> TranscriptionResult:
-        # Preprocess audio (normalize, resample, mono)
+    def transcribe(
+        self,
+        audio_path: Path,
+        meeting_id: Optional[str] = None,
+        on_status: Optional[Callable[[str], None]] = None,
+    ) -> TranscriptionResult:
+        """
+        Run the transcription pipeline with optional status callbacks so the caller
+        can surface progress to the user (e.g., status bar in the UI).
+        """
+
+        def notify(status: str) -> None:
+            if on_status:
+                try:
+                    on_status(status)
+                    print(f"[TranscriptionService] Status updated to: {status}")  # Debug logging
+                except Exception as e:
+                    # Do not let UI update failures break transcription
+                    print(f"[TranscriptionService] Failed to update status: {e}")
+                    pass
+
+        import time  # Import at function level to avoid global import
+
+        notify("loading_model")
+        time.sleep(0.5)  # Small delay to make stage visible
+        model = self._load_model()
+
+        notify("extracting_audio")
+        time.sleep(0.5)  # Small delay to make stage visible
         preprocessed_path = preprocess_audio(audio_path)
 
-        model = self._load_model()
+        notify("transcribing")
         result: Dict[str, Any] = model.transcribe(str(preprocessed_path))
 
-        # Apply diarization (optional)
+        notify("diarizing")
+        time.sleep(0.5)  # Small delay to make stage visible
         segments = self._apply_diarization(preprocessed_path, result.get("segments", []))
 
         transcription = TranscriptionResult(
@@ -123,9 +161,9 @@ class TranscriptionService:
             model=self.model_name,
         )
 
-        # Store transcript if a store is provided (still filesystem/in-memory, DB deferred)
+        notify("saving_transcript")
+        time.sleep(0.5)  # Small delay to make stage visible
         if self.transcript_store and meeting_id:
             self.transcript_store.save_transcript(meeting_id, transcription)
 
         return transcription
-

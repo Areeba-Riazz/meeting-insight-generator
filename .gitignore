@@ -27,6 +27,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
+*venv310/*
 
 # IDE
 .vscode/
@@ -46,6 +47,8 @@ logs/
 *.log
 
 # Storage (audio files, transcripts, vectors)
+backend/__pycache__
+backend/storage/*
 backend/storage/audio/*
 backend/storage/transcripts/*
 backend/storage/vectors/*

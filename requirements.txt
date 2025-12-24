@@ -9,7 +9,7 @@ pydantic-settings>=2.0.0
 langchain>=0.1.0,<0.3.0
 langchain-community>=0.0.10
 transformers>=4.35.0
-torch>=2.0.0
+torch==2.1.0
 sentencepiece>=0.1.99
 accelerate>=0.24.0
 
@@ -54,7 +54,8 @@ numpy>=1.24.0
 pandas>=2.0.0
 
 # Optional: Speaker Diarization
-pyannote.audio>=3.1.0  # Speaker diarization (requires torch + ffmpeg + HF token)
+pyannote.audio==3.1.1  # Speaker diarization (stable version, compatible with torch 2.1.0)
+torchaudio==2.1.0  # Required for pyannote.audio 3.1.1 (matches torch version)
 
 # Testing
 pytest>=7.4.0

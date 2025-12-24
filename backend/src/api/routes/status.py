@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from backend.src.api.routes.upload import pipeline_store
+from src.api.routes.upload import pipeline_store
 
 router = APIRouter()
 

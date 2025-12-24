@@ -1,15 +1,15 @@
 from pathlib import Path
 
-from backend.src.services.transcription_service import TranscriptionService
-from backend.src.services.transcript_store import TranscriptStore
+from src.services.transcription_service import TranscriptionService
+from src.services.transcript_store import TranscriptStore
 
 
 def main() -> None:
-    audio_path = Path("backend/storage/sample_audio/meeting.mp3")
+    audio_path = Path("storage/sample_audio/meeting.mp3")
     if not audio_path.exists():
         raise FileNotFoundError(f"Sample audio not found at {audio_path}")
 
-    store = TranscriptStore(base_path=Path("backend/storage"))
+    store = TranscriptStore(base_path=Path("storage"))
     svc = TranscriptionService(
         model_name="medium",
         device="cpu",

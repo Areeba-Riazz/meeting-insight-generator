@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from backend.src.agents.config import AgentSettings
+from src.agents.config import AgentSettings
 
 
 class LLMClient:
@@ -28,6 +28,7 @@ class LLMClient:
                     temperature=self.settings.temperature,
                     max_tokens=self.settings.max_tokens,
                     timeout=self.settings.timeout,
+                    api_key=self.settings.mistral_api_key,
                 )
                 return self._llm
             except Exception:
@@ -44,9 +45,15 @@ class LLMClient:
 
         try:
             # LangChain chat models expect messages; use a simple system/user pattern
-            from langchain.schema import HumanMessage
+            from langchain.schema import HumanMessage, SystemMessage
 
-            resp = await llm.apredict_messages([HumanMessage(content=prompt)])
+            system_prompt = kwargs.get("system_prompt")
+            messages = []
+            if system_prompt:
+                messages.append(SystemMessage(content=system_prompt))
+            messages.append(HumanMessage(content=prompt))
+
+            resp = await llm.apredict_messages(messages)
             return resp.content
         except Exception:
             return f"[LLM error fallback] {prompt[:200]}..."

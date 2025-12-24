@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from pydub import AudioSegment
-from backend.src.utils.video_utils import extract_audio_from_video
+from src.utils.video_utils import extract_audio_from_video
 
 
 def preprocess_audio(audio_path: Path, target_rate: int = 16000) -> Path:

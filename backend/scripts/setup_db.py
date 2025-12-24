@@ -65,7 +65,7 @@ async def main():
     print("=" * 50)
     print("\nNext steps:")
     print("1. Run migrations: alembic upgrade head")
-    print("2. Start the API: uvicorn src.main:app --reload")
+    print("2. Start the API: uvicorn main:app --reload  # run from backend/")
 
 
 if __name__ == "__main__":

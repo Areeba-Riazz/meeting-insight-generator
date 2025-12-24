@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-from backend.src.agents.base_agent import BaseAgent
-from backend.src.services.transcription_service import TranscriptionResult, TranscriptionService
+from src.agents.base_agent import BaseAgent
+from src.services.transcription_service import TranscriptionResult, TranscriptionService
 
 
 @dataclass
