@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { FileText, MessageSquare, Lightbulb, CheckSquare, TrendingUp, BarChart3 } from "lucide-react";
 
 type Transcript = {
@@ -19,6 +19,7 @@ type InsightsPayload = {
 
 type Props = {
   insights: InsightsPayload | null;
+  videoUrl?: string | null;
 };
 
 type TabId = "transcript" | "summary" | "topics" | "decisions" | "actions" | "sentiment";
@@ -51,8 +52,29 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-export function InsightsViewer({ insights }: Props) {
+export function InsightsViewer({ insights, videoUrl }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("transcript");
+  const [currentTime, setCurrentTime] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
+  }, [videoUrl]);
+
+  const seekToTime = (seconds: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+      videoRef.current.play();
+    }
+  };
 
   if (!insights) return null;
 
@@ -69,6 +91,20 @@ export function InsightsViewer({ insights }: Props) {
 
   return (
     <div>
+      {/* Video Player */}
+      {videoUrl && (
+        <div style={{ marginBottom: "2rem", borderRadius: "12px", overflow: "hidden", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}>
+          <video
+            ref={videoRef}
+            controls
+            style={{ width: "100%", maxHeight: "500px", display: "block", backgroundColor: "#000" }}
+            src={videoUrl}
+          >
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div style={{
         display: "flex",
@@ -155,9 +191,19 @@ export function InsightsViewer({ insights }: Props) {
                   const speakerColor = getSpeakerColor(speaker);
                   const prevSpeaker = idx > 0 ? (transcript.segments?.[idx - 1]?.speaker || "Unknown Speaker") : null;
                   const showSpeakerHeader = speaker !== prevSpeaker;
+                  const isCurrentSegment = videoUrl && currentTime >= seg.start && currentTime <= seg.end;
 
                   return (
-                    <div key={idx} style={{ marginBottom: "0.75rem" }}>
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        marginBottom: "0.75rem",
+                        background: isCurrentSegment ? "#fef3c7" : "transparent",
+                        padding: isCurrentSegment ? "0.5rem" : "0",
+                        borderRadius: "6px",
+                        transition: "all 0.3s ease"
+                      }}
+                    >
                       {showSpeakerHeader && (
                         <div style={{
                           display: "flex",
@@ -188,15 +234,26 @@ export function InsightsViewer({ insights }: Props) {
                         gap: "0.75rem",
                         paddingLeft: showSpeakerHeader ? "0rem" : "1rem"
                       }}>
-                        <div style={{
-                          fontSize: "0.7rem",
-                          color: "#9ca3af",
-                          fontFamily: "monospace",
-                          fontWeight: 500,
-                          minWidth: "80px",
-                          paddingTop: "0.25rem",
-                          flexShrink: 0
-                        }}>
+                        <div 
+                          onClick={() => videoUrl && seekToTime(seg.start)}
+                          style={{
+                            fontSize: "0.7rem",
+                            color: videoUrl ? "#3b82f6" : "#9ca3af",
+                            fontFamily: "monospace",
+                            fontWeight: 500,
+                            minWidth: "80px",
+                            paddingTop: "0.25rem",
+                            flexShrink: 0,
+                            cursor: videoUrl ? "pointer" : "default",
+                            textDecoration: videoUrl ? "underline" : "none"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (videoUrl) e.currentTarget.style.color = "#2563eb";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                          }}
+                        >
                           [{formatTime(seg.start)}]
                         </div>
                         <div style={{
@@ -249,21 +306,140 @@ export function InsightsViewer({ insights }: Props) {
               Meeting Summary
             </h3>
             {summary ? (
-              <div style={{
-                padding: "1.5rem",
-                background: "#faf5ff",
-                border: "1px solid #e9d5ff",
-                borderRadius: "10px"
-              }}>
-                <p style={{
-                  fontSize: "0.95rem",
-                  lineHeight: 1.7,
-                  color: "#374151",
-                  margin: 0,
-                  whiteSpace: "pre-wrap"
-                }}>
-                  {summary}
-                </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {/* Handle both string and object format */}
+                {typeof summary === 'string' ? (
+                  <div style={{
+                    padding: "1.5rem",
+                    background: "#faf5ff",
+                    border: "1px solid #e9d5ff",
+                    borderRadius: "10px"
+                  }}>
+                    <p style={{
+                      fontSize: "0.95rem",
+                      lineHeight: 1.7,
+                      color: "#374151",
+                      margin: 0,
+                      whiteSpace: "pre-wrap"
+                    }}>
+                      {summary}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Combined/Main Summary */}
+                    {summary.combined && (
+                      <div style={{
+                        padding: "1.5rem",
+                        background: "#faf5ff",
+                        border: "1px solid #e9d5ff",
+                        borderRadius: "10px"
+                      }}>
+                        <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          📝 Main Summary
+                        </div>
+                        <p style={{
+                          fontSize: "0.95rem",
+                          lineHeight: 1.7,
+                          color: "#374151",
+                          margin: 0,
+                          whiteSpace: "pre-wrap"
+                        }}>
+                          {summary.combined}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Extractive Summary - Key Excerpts */}
+                    {summary.extractive && (
+                      (() => {
+                        // Handle both old string format and new object format
+                        const extractiveData = typeof summary.extractive === 'string' 
+                          ? { text: summary.extractive, excerpts: [] }
+                          : summary.extractive;
+                        
+                        const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
+                        const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
+                        
+                        if (!shouldShow) return null;
+                        
+                        return (
+                          <div style={{
+                            padding: "1.5rem",
+                            background: "#eff6ff",
+                            border: "1px solid #dbeafe",
+                            borderRadius: "10px"
+                          }}>
+                            <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              📋 Key Excerpts
+                            </div>
+                            
+                            {hasExcerpts ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                                {extractiveData.excerpts.map((excerpt: any, idx: number) => (
+                                  <div 
+                                    key={idx}
+                                    style={{
+                                      padding: "1rem",
+                                      background: "white",
+                                      borderLeft: "3px solid #3b82f6",
+                                      borderRadius: "6px",
+                                      position: "relative"
+                                    }}
+                                  >
+                                    <div style={{
+                                      fontSize: "0.95rem",
+                                      lineHeight: 1.7,
+                                      color: "#374151",
+                                      fontStyle: "italic",
+                                      marginBottom: "0.5rem"
+                                    }}>
+                                      "{excerpt.text}"
+                                    </div>
+                                    {excerpt.timestamp !== null && excerpt.timestamp !== undefined && (
+                                      <div 
+                                        onClick={() => videoUrl && seekToTime(excerpt.timestamp)}
+                                        style={{
+                                          fontSize: "0.75rem",
+                                          color: videoUrl ? "#3b82f6" : "#9ca3af",
+                                          fontFamily: "monospace",
+                                          fontWeight: 500,
+                                          cursor: videoUrl ? "pointer" : "default",
+                                          textDecoration: videoUrl ? "underline" : "none",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "0.25rem"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (videoUrl) e.currentTarget.style.color = "#2563eb";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                                        }}
+                                      >
+                                        🕐 {formatTime(excerpt.timestamp)}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p style={{
+                                fontSize: "0.95rem",
+                                lineHeight: 1.7,
+                                color: "#374151",
+                                margin: 0,
+                                whiteSpace: "pre-wrap"
+                              }}>
+                                {extractiveData.text}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </>
+                )}
               </div>
             ) : (
               <div style={{

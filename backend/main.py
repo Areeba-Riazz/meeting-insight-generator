@@ -7,6 +7,7 @@ from typing import List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import uvicorn
 
@@ -58,6 +59,11 @@ app.add_middleware(
 
 # Routers
 app.include_router(api_router)
+
+# Serve storage folder as static files
+storage_path = BASE_DIR / "storage"
+storage_path.mkdir(exist_ok=True)
+app.mount("/storage", StaticFiles(directory=str(storage_path)), name="storage")
 
 
 @app.get("/", tags=["health"])

@@ -449,14 +449,6 @@ Each agent is a LangChain agent with specific tools and prompts:
 - [ ] Configure docker-compose.yml
 - [ ] Add volume mounts
 - [ ] Test containerized deployment
-- [ ] Document deployment process
-
-#### 6.2 Documentation
-- [ ] Write API documentation
-- [ ] Create architecture diagrams
-- [ ] Write user guide
-- [ ] Document configuration options
-- [ ] Create troubleshooting guide
 
 ---
 

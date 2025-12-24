@@ -1,129 +1,141 @@
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, Optional
-from collections import Counter
 
 from .base_agent import BaseAgent
-
-
-class HuggingFaceClient:
-    """Client for HuggingFace Inference API with error handling."""
-    
-    def __init__(self, token: Optional[str] = None):
-        import os
-        self.token = token or os.getenv("HUGGINGFACE_TOKEN")
-        self.base_url = "https://api-inference.huggingface.co/models"
-        self.headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
-    
-    def query(self, model: str, inputs: Dict[str, Any], timeout: int = 30) -> Optional[Dict]:
-        """Query HuggingFace model with error handling."""
-        if not self.token:
-            return None
-        
-        try:
-            import requests
-            response = requests.post(
-                f"{self.base_url}/{model}",
-                headers=self.headers,
-                json=inputs,
-                timeout=timeout
-            )
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except Exception as e:
-            print(f"[HuggingFace API Error] {e}")
-            return None
+from .llm_client import get_mistral_completion
 
 
 class SummaryAgent(BaseAgent):
     """
-    Generate meeting summary using extractive and abstractive techniques.
-    - Primary: HuggingFace BART model for abstractive summary
-    - Fallback: TextRank algorithm for extractive summary
+    Generate comprehensive meeting summary using Mistral AI.
+    Creates extractive (key quotes) and abstractive (AI-generated) summaries.
     """
     name = "summary_agent"
 
-    def __init__(self) -> None:
-        self.hf_client = HuggingFaceClient()
+    def __init__(self, token: Optional[str] = None) -> None:
+        self.token = token or os.getenv("MISTRAL_API_KEY")
 
-    def _extractive_summary(self, text: str, num_sentences: int = 3) -> str:
-        """
-        Extractive summarization using TextRank-like algorithm.
-        Fallback method that doesn't require external models.
-        """
-        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
-        if len(sentences) <= num_sentences:
-            return text
+    def _create_extractive_summary(self, text: str, segments: list = None, num_sentences: int = 5):
+        """Extract most important sentences for key excerpts with timestamps."""
+        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip() and len(s.strip()) > 20]
         
-        # Simple scoring: sentence length and position
+        # Score sentences by length, position, and key indicators
         scored_sentences = []
+        key_indicators = ['important', 'key', 'main', 'critical', 'essential', 'decided', 'agreed', 'action']
+        
         for i, sentence in enumerate(sentences):
-            words = sentence.split()
-            # Score based on length (prefer medium-length) and position (prefer early)
-            length_score = min(len(words) / 20.0, 1.0)
-            position_score = 1.0 - (i / len(sentences))
-            score = (length_score * 0.7) + (position_score * 0.3)
+            words = sentence.lower().split()
+            
+            # Length score (prefer medium-length sentences)
+            length_score = min(len(words) / 25.0, 1.0)
+            
+            # Position score (prefer early and late sentences)
+            position = i / len(sentences)
+            position_score = 1.0 - abs(0.5 - position)
+            
+            # Keyword score
+            keyword_score = sum(1 for indicator in key_indicators if indicator in sentence.lower()) / len(key_indicators)
+            
+            # Combined score
+            score = (length_score * 0.4) + (position_score * 0.3) + (keyword_score * 0.3)
             scored_sentences.append((score, sentence))
         
-        # Sort by score and take top N
+        # Sort and select top sentences
         scored_sentences.sort(reverse=True, key=lambda x: x[0])
-        top_sentences = [s[1] for s in scored_sentences[:num_sentences]]
+        top_sentences = [s[1] for s in scored_sentences[:min(num_sentences, len(scored_sentences))]]
         
-        # Return in original order
-        result = []
-        for sentence in sentences:
-            if sentence in top_sentences:
-                result.append(sentence)
+        # Find timestamps for each sentence by matching to segments
+        excerpts = []
+        if segments:
+            for sentence in top_sentences:
+                # Find the segment that contains this sentence (or part of it)
+                timestamp = None
+                for seg in segments:
+                    seg_text = seg.get('text', '').strip()
+                    # Check if sentence is in segment or vice versa (fuzzy match)
+                    if sentence[:30].lower() in seg_text.lower() or seg_text[:30].lower() in sentence.lower():
+                        timestamp = seg.get('start', 0)
+                        break
+                
+                excerpts.append({
+                    "text": sentence,
+                    "timestamp": timestamp if timestamp is not None else 0
+                })
+        else:
+            # If no segments, return sentences without timestamps
+            excerpts = [{"text": s, "timestamp": None} for s in top_sentences]
         
-        return '. '.join(result) + '.'
-
-    def _abstractive_summary(self, text: str, max_length: int = 150) -> Optional[str]:
-        """
-        Abstractive summarization using HuggingFace BART model.
-        Returns None if API fails.
-        """
-        # Truncate text if too long (BART has 1024 token limit)
-        max_input_length = 1024
-        words = text.split()
-        if len(words) > max_input_length:
-            text = ' '.join(words[:max_input_length])
+        # Also return as string for backward compatibility
+        excerpt_string = '. '.join(top_sentences) + '.' if top_sentences else ""
         
-        result = self.hf_client.query(
-            "facebook/bart-large-cnn",
-            {"inputs": text, "parameters": {"max_length": max_length, "min_length": 30}}
-        )
-        
-        if result and isinstance(result, list) and len(result) > 0:
-            return result[0].get("summary_text", "")
-        return None
+        return {"excerpts": excerpts, "text": excerpt_string}
 
     async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Generate both extractive and abstractive summaries.
+        Generate comprehensive meeting summary.
         
         Returns:
             {
                 "summary": {
-                    "extractive": "Key sentences...",
+                    "extractive": {"excerpts": [...], "text": "..."},
                     "abstractive": "AI-generated summary...",
-                    "combined": "Best summary..."
+                    "combined": "Main summary..."
                 }
             }
         """
         text: str = payload.get("text", "")
+        segments: list = payload.get("segments", [])
         
-        # Try abstractive first (HuggingFace API)
-        abstractive = self._abstractive_summary(text)
+        if not text or len(text) < 50:
+            return {"summary": "Transcript too short to summarize."}
         
-        # Always generate extractive as fallback
-        extractive = self._extractive_summary(text, num_sentences=3)
+        # Truncate if too long
+        max_words = 3000
+        words = text.split()
+        if len(words) > max_words:
+            text = ' '.join(words[:max_words]) + "..."
+        
+        # Generate extractive summary (key excerpts) with timestamps
+        extractive = self._create_extractive_summary(text, segments=segments, num_sentences=5)
+        
+        # Generate abstractive summary using Mistral AI
+        prompt = f"""You are an expert at summarizing meetings. Generate a comprehensive, well-structured summary of this meeting transcript.
+
+Transcript:
+{text}
+
+Create a clear, professional summary that:
+1. Captures the main purpose and outcomes of the meeting
+2. Highlights key discussion points and topics
+3. Notes any decisions made or action items mentioned
+4. Is concise but informative (3-5 paragraphs)
+5. Uses professional business language
+
+Summary:"""
+
+        try:
+            abstractive = await get_mistral_completion(
+                prompt=prompt,
+                max_tokens=500,
+                temperature=0.3,
+                api_key=self.token
+            )
+            abstractive = abstractive.strip() if abstractive else None
+        except Exception as e:
+            print(f"[SummaryAgent] Mistral API error: {e}")
+            abstractive = None
+        
+        # Fallback to extractive if AI fails
+        if not abstractive or len(abstractive) < 50:
+            abstractive = extractive.get("text", "")
         
         summary_result = {
             "extractive": extractive,
-            "abstractive": abstractive or extractive,
-            "combined": abstractive if abstractive else extractive
+            "abstractive": abstractive,
+            "combined": abstractive
         }
         
         return {"summary": summary_result}

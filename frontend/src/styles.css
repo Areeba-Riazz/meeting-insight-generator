@@ -270,13 +270,13 @@ pre {
   color: #0f172a;
 }
 
+.badge.status-uploading {
+  background: #e0e7ff;
+  color: #3730a3;
+}
 .badge.status-processing {
   background: #fef3c7;
   color: #92400e;
-}
-.badge.status-queued {
-  background: #dbeafe;
-  color: #1d4ed8;
 }
 .badge.status-completed {
   background: #dcfce7;

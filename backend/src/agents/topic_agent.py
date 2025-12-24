@@ -1,94 +1,52 @@
 from __future__ import annotations
 
+import os
+import json
 import re
-from typing import Any, Dict, List
-from collections import Counter
+from typing import Any, Dict, List, Optional
 
 from .base_agent import BaseAgent
+from .llm_client import get_mistral_completion
 
 
 class TopicAgent(BaseAgent):
     """
-    Extract key topics from meeting transcript using keyword extraction.
-    - Primary: Keyword frequency analysis
-    - Fallback: Simple word counting
+    Extract meaningful topics from meeting transcript using Mistral AI.
+    Identifies discussion themes with timestamps and summaries.
     """
     name = "topic_agent"
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, token: Optional[str] = None) -> None:
+        self.token = token or os.getenv("MISTRAL_API_KEY")
 
-    def _extract_keywords(self, text: str, top_n: int = 10) -> List[str]:
-        """
-        Extract keywords using simple frequency-based approach.
-        Fallback method without external dependencies.
-        """
-        # Remove common stop words
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
-            'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-            'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these',
-            'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which',
-            'who', 'when', 'where', 'why', 'how', 'all', 'each', 'every', 'both',
-            'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not',
-            'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just'
-        }
+    def _find_topic_timestamps(self, topic_keywords: List[str], segments: List[Dict]) -> tuple:
+        """Find start and end timestamps for a topic based on keywords."""
+        matching_segments = []
         
-        # Extract words
-        words = re.findall(r'\b[a-z]{3,}\b', text.lower())
+        for seg in segments:
+            text = seg.get('text', '').lower()
+            if any(keyword.lower() in text for keyword in topic_keywords):
+                matching_segments.append(seg)
         
-        # Filter stop words and count
-        filtered_words = [w for w in words if w not in stop_words]
-        word_freq = Counter(filtered_words)
-        
-        # Return top N keywords
-        return [word for word, _ in word_freq.most_common(top_n)]
-
-    def _extract_topics(self, text: str, segments: List[Dict], top_n: int = 5) -> List[Dict[str, Any]]:
-        """
-        Extract topics with timestamps using keyword-based approach.
-        """
-        keywords = self._extract_keywords(text, top_n=top_n * 2)
-        
-        topics = []
-        for keyword in keywords[:top_n]:
-            # Find segments containing this keyword
-            matching_segments = [
-                seg for seg in segments 
-                if keyword.lower() in seg.get('text', '').lower()
-            ]
-            
-            if matching_segments:
-                first_seg = matching_segments[0]
-                last_seg = matching_segments[-1]
-                
-                # Create topic summary
-                context = ' '.join([seg.get('text', '') for seg in matching_segments[:2]])
-                
-                topics.append({
-                    "topic": keyword.capitalize(),
-                    "keywords": [keyword],
-                    "start": first_seg.get('start', 0),
-                    "end": last_seg.get('end', 0),
-                    "summary": context[:100] + "..." if len(context) > 100 else context
-                })
-        
-        return topics
+        if matching_segments:
+            return (
+                matching_segments[0].get('start', 0),
+                matching_segments[-1].get('end', 0)
+            )
+        return (0, 0)
 
     async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract topics with timestamps.
+        Extract key topics with timestamps and summaries.
         
         Returns:
             {
                 "topics": [
                     {
-                        "topic": "Project Timeline",
-                        "keywords": ["deadline", "schedule"],
-                        "start": 120.5,
-                        "end": 180.2,
-                        "summary": "Discussion about deadlines..."
+                        "topic": "PowerPoint Tips for Teachers",
+                        "start": 0,
+                        "end": 120,
+                        "summary": "Introduction to PowerPoint features..."
                     }
                 ]
             }
@@ -96,6 +54,77 @@ class TopicAgent(BaseAgent):
         text: str = payload.get("text", "")
         segments: list = payload.get("segments", [])
         
-        topics = self._extract_topics(text, segments, top_n=5)
+        if not text or len(text) < 50:
+            return {"topics": []}
         
-        return {"topics": topics}
+        # Truncate if too long
+        max_words = 2000
+        words = text.split()
+        if len(words) > max_words:
+            text = ' '.join(words[:max_words]) + "..."
+        
+        # Use Mistral AI to identify topics
+        prompt = f"""You are an expert at analyzing meeting transcripts. Identify the main topics/themes discussed in this transcript.
+
+Transcript:
+{text}
+
+Identify 3-7 distinct topics that were discussed. For each topic, provide:
+1. A clear, descriptive topic name (3-8 words)
+2. Key keywords mentioned (2-4 words)
+3. A brief summary of what was discussed (1-2 sentences)
+
+Return ONLY a valid JSON array with this exact format:
+[
+  {{
+    "topic": "Topic Name",
+    "keywords": ["keyword1", "keyword2"],
+    "summary": "Brief summary of the discussion."
+  }}
+]
+
+Topics:"""
+
+        try:
+            response = await get_mistral_completion(
+                prompt=prompt,
+                max_tokens=800,
+                temperature=0.3,
+                api_key=self.token
+            )
+            
+            # Parse JSON response
+            response = response.strip()
+            # Extract JSON array if wrapped in text
+            json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
+            if json_match:
+                response = json_match.group(0)
+            
+            topics_data = json.loads(response)
+            
+            # Add timestamps to each topic
+            topics = []
+            for topic in topics_data:
+                keywords = topic.get('keywords', [topic.get('topic', '').split()[0]])
+                start, end = self._find_topic_timestamps(keywords, segments)
+                
+                topics.append({
+                    "topic": topic.get('topic', 'Unknown Topic'),
+                    "start": start,
+                    "end": end,
+                    "summary": topic.get('summary', '')
+                })
+            
+            return {"topics": topics if topics else []}
+            
+        except Exception as e:
+            print(f"[TopicAgent] Error: {e}")
+            # Fallback: Return a generic topic
+            return {
+                "topics": [{
+                    "topic": "Meeting Discussion",
+                    "start": segments[0].get('start', 0) if segments else 0,
+                    "end": segments[-1].get('end', 0) if segments else 0,
+                    "summary": "General discussion covering multiple topics."
+                }]
+            }

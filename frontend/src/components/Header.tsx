@@ -1,8 +1,46 @@
-import React, { useState } from "react";
-import { Menu, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Menu, X, Clock } from "lucide-react";
+import { listMeetings, type Meeting } from "../api/client";
 
 export function Header() {
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loadingMeetings, setLoadingMeetings] = useState(false);
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      loadMeetings();
+    }
+  }, [sidebarOpen]);
+
+  const loadMeetings = async () => {
+    setLoadingMeetings(true);
+    try {
+      const result = await listMeetings();
+      setMeetings(result.meetings);
+    } catch (err) {
+      console.error("Failed to load meetings:", err);
+    } finally {
+      setLoadingMeetings(false);
+    }
+  };
+
+  const formatDate = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    } catch {
+      return timestamp;
+    }
+  };
 
   return (
     <>
@@ -34,7 +72,10 @@ export function Header() {
           alignItems: "center",
           justifyContent: "space-between"
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div 
+            onClick={() => navigate("/")}
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}
+          >
             <div style={{ 
               width: "2.5rem", 
               height: "2.5rem", 
@@ -46,8 +87,18 @@ export function Header() {
               fontWeight: 700,
               fontSize: "1rem",
               color: "white",
-              boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)"
-            }}>
+              boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "scale(1.05)";
+              e.currentTarget.style.boxShadow = "0 6px 16px rgba(59, 130, 246, 0.4)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "scale(1)";
+              e.currentTarget.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+            }}
+            >
               MI
             </div>
             <div>
@@ -126,24 +177,74 @@ export function Header() {
             </button>
           </div>
           
-          {/* Placeholder for previous insights */}
-          <div style={{ 
-            color: "#9ca3af", 
-            fontSize: "0.875rem", 
-            textAlign: "center", 
-            padding: "3rem 1rem",
-            background: "#f9fafb",
-            borderRadius: "8px",
-            border: "1px dashed #e5e7eb"
-          }}>
-            <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>📝</div>
-            <div style={{ fontWeight: 500, color: "#6b7280", marginBottom: "0.25rem" }}>
-              No insights yet
+          {/* Previous insights list */}
+          {loadingMeetings ? (
+            <div style={{ 
+              color: "#9ca3af", 
+              fontSize: "0.875rem", 
+              textAlign: "center", 
+              padding: "3rem 1rem"
+            }}>
+              Loading...
             </div>
-            <div style={{ fontSize: "0.8rem" }}>
-              Upload a meeting to get started
+          ) : meetings.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {meetings.map((meeting) => (
+                <div 
+                  key={meeting.meeting_id}
+                  onClick={() => {
+                    navigate(`/insights/${meeting.meeting_id}`);
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    padding: "1rem",
+                    background: "#f9fafb",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#f3f4f6";
+                    e.currentTarget.style.borderColor = "#d1d5db";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#f9fafb";
+                    e.currentTarget.style.borderColor = "#e5e7eb";
+                  }}
+                >
+                  <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#111827", marginBottom: "0.5rem" }}>
+                    {meeting.meeting_name}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <Clock style={{ width: "0.75rem", height: "0.75rem" }} />
+                    {formatDate(meeting.upload_timestamp)}
+                  </div>
+                  <div style={{ fontSize: "0.7rem", color: "#9ca3af", fontFamily: "monospace" }}>
+                    {meeting.meeting_id}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div style={{ 
+              color: "#9ca3af", 
+              fontSize: "0.875rem", 
+              textAlign: "center", 
+              padding: "3rem 1rem",
+              background: "#f9fafb",
+              borderRadius: "8px",
+              border: "1px dashed #e5e7eb"
+            }}>
+              <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>📝</div>
+              <div style={{ fontWeight: 500, color: "#6b7280", marginBottom: "0.25rem" }}>
+                No insights yet
+              </div>
+              <div style={{ fontSize: "0.8rem" }}>
+                Upload a meeting to get started
+              </div>
+            </div>
+          )}
 
           {/* Example of what insight items could look like */}
           {/* Uncomment and populate with real data:

@@ -1,20 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getInsights, getStatus } from "../api/client";
+import { getInsights } from "../api/client";
 import { InsightsViewer } from "../components/InsightsViewer";
 import { Header } from "../components/Header";
-import { AlertCircle, Loader2, CheckCircle2, ArrowLeft } from "lucide-react";
+import { AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 
-type Status = "idle" | "queued" | "processing" | "completed" | `error: ${string}` | string;
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 export default function InsightsPage() {
   const { meetingId: routeId } = useParams();
   const navigate = useNavigate();
   const [meetingId, setMeetingId] = useState<string | null>(routeId ?? null);
-  const [status, setStatus] = useState<Status>("idle");
   const [insights, setInsights] = useState<Record<string, any> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setMeetingId(routeId ?? null);
@@ -26,13 +26,23 @@ export default function InsightsPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const st = await getStatus(meetingId);
-        setStatus(st.status as Status);
-        if (st.status === "completed") {
-          const res = await getInsights(meetingId);
-          setInsights(res.insights);
-        } else {
-          setError("Processing not completed yet. Please return to upload page.");
+        // Try to get insights (will check in-memory store and storage folder)
+        const res = await getInsights(meetingId);
+        setInsights(res.insights);
+        
+        // Try to load video
+        try {
+          const videoPath = `${API_BASE}/storage/${meetingId}/audio/`;
+          const metadataRes = await fetch(`${API_BASE}/storage/${meetingId}/metadata.json`);
+          if (metadataRes.ok) {
+            const metadata = await metadataRes.json();
+            const filename = metadata.file_info?.original_filename;
+            if (filename) {
+              setVideoUrl(`${videoPath}${filename}`);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load video:", err);
         }
       } catch (err: any) {
         setError(err?.message || "Failed to load insights");
@@ -43,17 +53,8 @@ export default function InsightsPage() {
     load();
   }, [meetingId]);
 
-  const getStatusColor = () => {
-    if (status === "completed") return { bg: "#ecfdf5", border: "#86efac", text: "#065f46" };
-    if (status.startsWith("error")) return { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" };
-    if (status === "processing") return { bg: "#eff6ff", border: "#93c5fd", text: "#1e40af" };
-    return { bg: "#f9fafb", border: "#e5e7eb", text: "#6b7280" };
-  };
-
-  const statusColor = getStatusColor();
-
   return (
-    <div style={{ minHeight: "100vh", background: "#fafafa", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", position: "relative", overflow: "hidden" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
@@ -64,9 +65,14 @@ export default function InsightsPage() {
           to { transform: rotate(360deg); }
         }
         @keyframes float {
-          0%, 100% { transform: translateY(0px) translateX(0px); }
-          33% { transform: translateY(-30px) translateX(20px); }
-          66% { transform: translateY(20px) translateX(-20px); }
+          0%, 100% { transform: translateY(0px) translateX(0px) rotate(0deg); }
+          33% { transform: translateY(-40px) translateX(30px) rotate(5deg); }
+          66% { transform: translateY(30px) translateX(-30px) rotate(-5deg); }
+        }
+        @keyframes floatReverse {
+          0%, 100% { transform: translateY(0px) translateX(0px) scale(1); }
+          33% { transform: translateY(30px) translateX(-25px) scale(1.1); }
+          66% { transform: translateY(-25px) translateX(25px) scale(0.95); }
         }
         .animated-bg {
           position: fixed;
@@ -77,27 +83,72 @@ export default function InsightsPage() {
           z-index: 0;
           overflow: hidden;
           pointer-events: none;
+          background: linear-gradient(to bottom, #fafafa 0%, #f0f9ff 100%);
         }
-        .animated-bg::before {
+        .animated-bg::before,
+        .animated-bg::after {
           content: '';
           position: absolute;
-          top: -10%;
-          left: -10%;
-          width: 120%;
-          height: 120%;
-          background: 
-            radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
-            radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
-          animation: float 25s ease-in-out infinite;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.4;
+        }
+        .animated-bg::before {
+          top: 10%;
+          left: 10%;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+          animation: float 20s ease-in-out infinite;
+        }
+        .animated-bg::after {
+          bottom: 10%;
+          right: 10%;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+          animation: floatReverse 18s ease-in-out infinite;
         }
         .content-wrapper {
           position: relative;
           z-index: 1;
         }
+        .floating-shape {
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.08);
+          pointer-events: none;
+        }
+        .shape-1 {
+          width: 150px;
+          height: 150px;
+          top: 15%;
+          right: 15%;
+          animation: float 15s ease-in-out infinite;
+        }
+        .shape-2 {
+          width: 100px;
+          height: 100px;
+          bottom: 20%;
+          left: 10%;
+          background: rgba(139, 92, 246, 0.08);
+          animation: floatReverse 12s ease-in-out infinite;
+        }
+        .shape-3 {
+          width: 80px;
+          height: 80px;
+          top: 40%;
+          left: 20%;
+          background: rgba(16, 185, 129, 0.08);
+          animation: float 18s ease-in-out infinite 2s;
+        }
       `}</style>
 
-      <div className="animated-bg" />
+      <div className="animated-bg">
+        <div className="floating-shape shape-1" />
+        <div className="floating-shape shape-2" />
+        <div className="floating-shape shape-3" />
+      </div>
 
       <Header />
 
@@ -140,114 +191,6 @@ export default function InsightsPage() {
               </p>
             </div>
           </div>
-        </div>
-
-        {/* Status Card */}
-        <div style={{
-          background: "white",
-          border: "1px solid #e5e7eb",
-          borderRadius: "16px",
-          padding: "2rem",
-          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
-          marginBottom: "1.5rem",
-          animation: "fadeIn 0.5s ease-out"
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
-            <div style={{
-              width: "2rem",
-              height: "2rem",
-              background: status === "completed"
-                ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
-                : status.startsWith("error")
-                  ? "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-                  : "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-              borderRadius: "8px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }}>
-              {status === "completed" ? (
-                <CheckCircle2 style={{ width: "1.125rem", height: "1.125rem", color: "white" }} />
-              ) : status.startsWith("error") ? (
-                <AlertCircle style={{ width: "1.125rem", height: "1.125rem", color: "white" }} />
-              ) : (
-                <Loader2 style={{ width: "1.125rem", height: "1.125rem", color: "white", animation: "spin 1s linear infinite" }} />
-              )}
-            </div>
-            <h2 style={{ fontSize: "1.125rem", fontWeight: 600, color: "#111827", margin: 0 }}>
-              Processing Status
-            </h2>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
-            <div>
-              <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-                Meeting ID
-              </div>
-              <div style={{
-                fontFamily: "monospace",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                color: "#111827",
-                padding: "0.5rem 0.75rem",
-                background: "#f9fafb",
-                borderRadius: "6px",
-                border: "1px solid #e5e7eb"
-              }}>
-                {meetingId || "—"}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-                Status
-              </div>
-              <div style={{
-                display: "inline-block",
-                padding: "0.5rem 1rem",
-                background: statusColor.bg,
-                border: `1px solid ${statusColor.border}`,
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-                color: statusColor.text
-              }}>
-                {status}
-              </div>
-            </div>
-          </div>
-
-          {status !== "completed" && (
-            <div style={{ marginTop: "1.5rem" }}>
-              <button
-                onClick={() => navigate("/")}
-                style={{
-                  padding: "0.625rem 1.25rem",
-                  background: "white",
-                  color: "#374151",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "8px",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  transition: "all 0.2s ease"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#9ca3af";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "white";
-                  e.currentTarget.style.borderColor = "#d1d5db";
-                }}
-              >
-                <ArrowLeft style={{ width: "0.875rem", height: "0.875rem" }} />
-                Back to Upload
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Error Card */}
@@ -312,7 +255,7 @@ export default function InsightsPage() {
           )}
 
           {!isLoading && insights ? (
-            <InsightsViewer insights={insights} />
+            <InsightsViewer insights={insights} videoUrl={videoUrl} />
           ) : (
             !isLoading && (
               <div style={{

@@ -136,7 +136,8 @@ def create_metadata_file(
 
 async def process_meeting(meeting_id: str, audio_path: Path) -> None:
     try:
-        pipeline_store.set_status(meeting_id, "processing", progress=5, stage="Initializing")
+        # Processing starts immediately after upload completes
+        pipeline_store.set_status(meeting_id, "processing", progress=0, stage="Initializing processing pipeline")
 
         def update_status(stage: str, progress: float = None, stage_desc: str = None) -> None:
             pipeline_store.set_status(meeting_id, stage, progress=progress, stage=stage_desc)
@@ -163,6 +164,17 @@ async def process_meeting(meeting_id: str, audio_path: Path) -> None:
         # Step 3: Save results (transcript + agent insights)
         update_status("saving_results", progress=95, stage_desc="Saving results")
         pipeline_store.set_result(meeting_id, results)
+        
+        # Save insights to JSON file in storage
+        meeting_dir = Path("storage") / meeting_id
+        insights_file = meeting_dir / "insights.json"
+        try:
+            with open(insights_file, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+            print(f"[Upload] Saved insights to {insights_file}")
+        except Exception as e:
+            print(f"[Upload] Error saving insights to file: {e}")
+        
         pipeline_store.set_status(meeting_id, "completed", progress=100, stage="Completed")
     except Exception as e:  # pragma: no cover - basic error propagation
         pipeline_store.set_status(meeting_id, f"error: {e}", progress=0, stage="Error")
@@ -187,15 +199,20 @@ async def upload_meeting_file(
 
     # Generate meeting ID from filename and timestamp
     meeting_id, meeting_uuid = generate_meeting_id(file.filename)
+    
+    # Set uploading status - track file operations
+    pipeline_store.set_status(meeting_id, "uploading", progress=10, stage="Creating meeting directory")
     meeting_dir = Path("storage") / meeting_id / "audio"
     meeting_dir.mkdir(parents=True, exist_ok=True)
     audio_path = meeting_dir / file.filename
 
+    pipeline_store.set_status(meeting_id, "uploading", progress=40, stage="Saving video file")
     content = await file.read()
     with audio_path.open("wb") as f:
         f.write(content)
     
     # Create metadata.json file
+    pipeline_store.set_status(meeting_id, "uploading", progress=70, stage="Creating metadata")
     create_metadata_file(
         meeting_dir=meeting_dir.parent,
         meeting_uuid=meeting_uuid,
@@ -206,6 +223,7 @@ async def upload_meeting_file(
     )
 
     # Validate file type/size
+    pipeline_store.set_status(meeting_id, "uploading", progress=90, stage="Validating file")
     try:
         validate_file(audio_path, content_type=file.content_type, max_mb=500)
     except ValueError as e:
@@ -221,8 +239,9 @@ async def upload_meeting_file(
             detail="Another file is currently being processed. Please wait for it to complete."
         )
 
-    pipeline_store.set_status(meeting_id, "queued", progress=0, stage="Queued")
+    # Upload complete - processing will start immediately in background
+    pipeline_store.set_status(meeting_id, "uploading", progress=100, stage="Upload complete")
     background_tasks.add_task(process_meeting, meeting_id, audio_path)
 
-    return {"meeting_id": meeting_id, "status": "queued"}
+    return {"meeting_id": meeting_id, "status": "uploading"}
 

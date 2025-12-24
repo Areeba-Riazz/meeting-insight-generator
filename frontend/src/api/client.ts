@@ -76,3 +76,25 @@ export async function getInsights(meetingId: string): Promise<InsightsResponse> 
   return res.json();
 }
 
+export interface Meeting {
+  meeting_id: string;
+  uuid: string;
+  meeting_name: string;
+  upload_timestamp: string;
+  file_info: {
+    original_filename: string;
+    size_bytes: number;
+    content_type: string;
+  };
+  has_insights: boolean;
+  has_transcript: boolean;
+}
+
+export async function listMeetings(): Promise<{ meetings: Meeting[] }> {
+  const res = await fetch(`${API_BASE}/api/v1/meetings`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch meetings: ${res.statusText}`);
+  }
+  return res.json();
+}
+

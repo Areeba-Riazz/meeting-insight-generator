@@ -5,11 +5,11 @@ import { UploadForm } from "../components/UploadForm";
 import { Header } from "../components/Header";
 import { ToastContainer } from "../components/Toast";
 import { useToast } from "../hooks/useToast";
-import { CheckCircle2, Loader2, AlertCircle, ArrowRight, RotateCcw } from "lucide-react";
+import { CheckCircle2, Loader2, AlertCircle, ArrowRight, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 
 type Status =
   | "idle"
-  | "queued"
+  | "uploading"
   | "processing"
   | "loading_model"
   | "extracting_audio"
@@ -23,7 +23,8 @@ type Status =
   | string;
 
 const STAGES: Array<{ key: Status; label: string; helper: string; icon: string }> = [
-  { key: "queued", label: "Queued", helper: "Preparing job", icon: "⏳" },
+  { key: "uploading", label: "Uploading", helper: "Saving video file", icon: "📤" },
+  { key: "processing", label: "Initializing", helper: "Starting processing pipeline", icon: "⚙️" },
   { key: "loading_model", label: "Loading Model", helper: "Loading Whisper AI model", icon: "🤖" },
   { key: "extracting_audio", label: "Extracting Audio", helper: "Processing media file", icon: "🎵" },
   { key: "transcribing", label: "Transcribing", helper: "Converting speech to text", icon: "✍️" },
@@ -36,9 +37,8 @@ const STAGES: Array<{ key: Status; label: string; helper: string; icon: string }
 
 const progressForStatus = (status: Status) => {
   if (status.startsWith("error")) return 10;
-  const normalizedStatus = status === "processing" ? "loading_model" : status;
   const order = STAGES.map((s) => s.key);
-  const idx = order.indexOf(normalizedStatus);
+  const idx = order.indexOf(status);
   const clampedIdx = idx === -1 ? 0 : idx;
   return Math.round((clampedIdx / (order.length - 1)) * 100);
 };
@@ -47,14 +47,12 @@ const stageForStatus = (status: Status) => {
   const found = STAGES.find((s) => s.key === status);
   if (found) return found.label;
   if (status.startsWith("error")) return "Error";
-  if (status === "processing") return "Video Processing";
-  return "Idle";
+  return "Processing";
 };
 
 const helperForStatus = (status: Status) => {
   const found = STAGES.find((s) => s.key === status);
   if (found) return found.helper;
-  if (status === "processing") return "Initializing pipeline";
   return "";
 };
 
@@ -64,27 +62,33 @@ export default function UploadPage() {
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [progress, setProgress] = useState<number>(0);
   const [stage, setStage] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [showDetails, setShowDetails] = useState<boolean>(false);
+  const [isRequestInProgress, setIsRequestInProgress] = useState<boolean>(false);
 
   const handleUpload = useCallback(async (file: File) => {
+    console.log("[UploadPage] Starting upload for file:", file.name);
     setError(null);
     setMeetingId(null);
-    setUploadProgress(0);
     setProgress(0);
     setStage(null);
-    setIsUploading(true);
+    setShowDetails(false);
+    setIsRequestInProgress(true);
+    
     try {
-      const resp = await uploadMeeting(file, (progressPercent: number) => {
-        setUploadProgress(progressPercent);
-      });
+      console.log("[UploadPage] Calling uploadMeeting API...");
+      const resp = await uploadMeeting(file);
+      console.log("[UploadPage] Upload response received:", resp);
+      
       setMeetingId(resp.meeting_id);
       setStatus(resp.status as Status);
-      // Upload complete - transition to processing immediately
-      setIsUploading(false);
+      setIsRequestInProgress(false);
+      // Polling will start automatically via useEffect
     } catch (err: any) {
+      console.error("[UploadPage] Upload error:", err);
+      setIsRequestInProgress(false);
+      
       const errorMessage = err?.message || "Upload failed";
       const isConnectionError =
         errorMessage.includes("CONNECTION_ERROR:") ||
@@ -98,11 +102,9 @@ export default function UploadPage() {
         showError(cleanMessage || "Backend server is not connected. Please check if the server is running.");
         setStatus("idle");
         setMeetingId(null);
-        setIsUploading(false);
       } else {
         setError(errorMessage);
         setStatus("idle");
-        setIsUploading(false);
       }
     }
   }, [showError]);
@@ -110,6 +112,9 @@ export default function UploadPage() {
   useEffect(() => {
     if (!meetingId) return;
     let cancelled = false;
+    let pollCount = 0;
+    const maxConsecutiveErrors = 5;
+    let consecutiveErrors = 0;
     const shouldStop = (s: string) => s.startsWith("completed") || s.startsWith("error");
 
     const poll = async () => {
@@ -117,7 +122,10 @@ export default function UploadPage() {
         const resp = await getStatus(meetingId);
         if (cancelled) return;
 
-        console.log(`[Frontend] Polled status: ${resp.status}, progress: ${resp.progress}%, stage: ${resp.stage}`);
+        pollCount++;
+        consecutiveErrors = 0; // Reset error count on success
+        
+        console.log(`[Frontend] Poll #${pollCount} - Status: ${resp.status}, Progress: ${resp.progress}%, Stage: ${resp.stage}`);
         setStatus(resp.status as Status);
         
         // Use backend progress if available, otherwise calculate from status
@@ -130,6 +138,7 @@ export default function UploadPage() {
         if (resp.stage) {
           setStage(resp.stage);
         }
+        
         if (resp.status === "completed") {
           navigate(`/insights/${meetingId}`);
         } else if (!shouldStop(resp.status)) {
@@ -137,18 +146,27 @@ export default function UploadPage() {
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || "Status check failed");
-          setTimeout(poll, 1000);
+          consecutiveErrors++;
+          console.error(`[Frontend] Status poll error (${consecutiveErrors}/${maxConsecutiveErrors}):`, err);
+          
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            setError(`Failed to fetch status after ${maxConsecutiveErrors} attempts. Please refresh the page.`);
+            setStatus("idle");
+          } else {
+            // Continue polling despite errors (might be temporary network issue)
+            setTimeout(poll, 2000);  // Slightly longer delay on error
+          }
         }
       }
     };
 
-    // Start polling immediately after upload completes
+    // Start polling immediately
     poll();
     return () => { cancelled = true; };
   }, [meetingId, navigate]);
 
-  const isProcessing = status !== "idle" && !status.startsWith("error") && status !== "completed";
+  const isUploading = status === "uploading" || isRequestInProgress;
+  const isProcessing = status !== "idle" && status !== "uploading" && !status.startsWith("error") && status !== "completed" && !isRequestInProgress;
 
   return (
     <div style={{ minHeight: "100vh", background: "#fafafa", position: "relative", overflow: "hidden" }}>
@@ -166,9 +184,18 @@ export default function UploadPage() {
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes float {
-          0%, 100% { transform: translateY(0px) translateX(0px); }
-          33% { transform: translateY(-30px) translateX(20px); }
-          66% { transform: translateY(20px) translateX(-20px); }
+          0%, 100% { transform: translateY(0px) translateX(0px) rotate(0deg); }
+          33% { transform: translateY(-40px) translateX(30px) rotate(5deg); }
+          66% { transform: translateY(30px) translateX(-30px) rotate(-5deg); }
+        }
+        @keyframes floatReverse {
+          0%, 100% { transform: translateY(0px) translateX(0px) scale(1); }
+          33% { transform: translateY(30px) translateX(-25px) scale(1.1); }
+          66% { transform: translateY(-25px) translateX(25px) scale(0.95); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.5; }
         }
         @keyframes pulse-glow {
           0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
@@ -183,27 +210,72 @@ export default function UploadPage() {
           z-index: 0;
           overflow: hidden;
           pointer-events: none;
+          background: linear-gradient(to bottom, #fafafa 0%, #f0f9ff 100%);
         }
-        .animated-bg::before {
+        .animated-bg::before,
+        .animated-bg::after {
           content: '';
           position: absolute;
-          top: -10%;
-          left: -10%;
-          width: 120%;
-          height: 120%;
-          background: 
-            radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
-            radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
-          animation: float 25s ease-in-out infinite;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.4;
+        }
+        .animated-bg::before {
+          top: 10%;
+          left: 10%;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+          animation: float 20s ease-in-out infinite;
+        }
+        .animated-bg::after {
+          bottom: 10%;
+          right: 10%;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+          animation: floatReverse 18s ease-in-out infinite;
         }
         .content-wrapper {
           position: relative;
           z-index: 1;
         }
+        .floating-shape {
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.08);
+          pointer-events: none;
+        }
+        .shape-1 {
+          width: 150px;
+          height: 150px;
+          top: 15%;
+          right: 15%;
+          animation: float 15s ease-in-out infinite;
+        }
+        .shape-2 {
+          width: 100px;
+          height: 100px;
+          bottom: 20%;
+          left: 10%;
+          background: rgba(139, 92, 246, 0.08);
+          animation: floatReverse 12s ease-in-out infinite;
+        }
+        .shape-3 {
+          width: 80px;
+          height: 80px;
+          top: 40%;
+          left: 20%;
+          background: rgba(16, 185, 129, 0.08);
+          animation: float 18s ease-in-out infinite 2s;
+        }
       `}</style>
 
-      <div className="animated-bg" />
+      <div className="animated-bg">
+        <div className="floating-shape shape-1" />
+        <div className="floating-shape shape-2" />
+        <div className="floating-shape shape-3" />
+      </div>
 
       <Header />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -213,25 +285,56 @@ export default function UploadPage() {
         {!isUploading && !isProcessing && status === "idle" ? (
           <div style={{ animation: "fadeIn 0.4s ease-out" }}>
             {/* Hero Section */}
-            <div style={{ textAlign: "center", marginBottom: "3rem" }}>
-              <h1 style={{ fontSize: "2.5rem", fontWeight: 700, color: "#111827", marginBottom: "1rem", lineHeight: 1.2 }}>
-                Transform Your Meetings<br />into Actionable Insights
+            <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+              <div style={{ 
+                display: "inline-block", 
+                padding: "0.375rem 0.875rem", 
+                background: "linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)",
+                border: "1px solid #dbeafe",
+                borderRadius: "999px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                color: "#3b82f6",
+                marginBottom: "1rem",
+                letterSpacing: "0.05em",
+                textTransform: "uppercase"
+              }}>
+                ✨ AI-Powered Analysis
+              </div>
+              <h1 style={{ 
+                fontSize: "2.25rem", 
+                fontWeight: 700, 
+                background: "linear-gradient(135deg, #111827 0%, #4b5563 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                marginBottom: "0.75rem", 
+                lineHeight: 1.2 
+              }}>
+                Transform Meetings into Insights
               </h1>
-              <p style={{ fontSize: "1.125rem", color: "#6b7280", maxWidth: 600, margin: "0 auto" }}>
-                Upload your recording and let AI extract key insights, action items, and speaker contributions
+              <p style={{ 
+                fontSize: "1rem", 
+                color: "#6b7280", 
+                maxWidth: 480, 
+                margin: "0 auto",
+                lineHeight: 1.6
+              }}>
+                Upload your recording and let AI extract key insights, action items, and speaker contributions automatically
               </p>
             </div>
 
             {/* Upload Card */}
             <div style={{
-              background: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: "16px",
+              background: "rgba(255, 255, 255, 0.8)",
+              backdropFilter: "blur(10px)",
+              border: "1px solid rgba(229, 231, 235, 0.5)",
+              borderRadius: "20px",
               padding: "2.5rem",
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+              boxShadow: "0 10px 40px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)",
               marginBottom: "2rem"
             }}>
-              <UploadForm onUpload={handleUpload} isUploading={isUploading} />
+              <UploadForm onUpload={handleUpload} isUploading={isRequestInProgress} />
 
               {error && (
                 <div style={{
@@ -251,48 +354,51 @@ export default function UploadPage() {
             </div>
 
             {/* Feature Pills */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.625rem", justifyContent: "center" }}>
               <div style={{
-                padding: "0.625rem 1.25rem",
-                background: "#eff6ff",
-                border: "1px solid #dbeafe",
+                padding: "0.5rem 1rem",
+                background: "rgba(239, 246, 255, 0.6)",
+                backdropFilter: "blur(8px)",
+                border: "1px solid rgba(219, 234, 254, 0.8)",
                 borderRadius: "999px",
-                fontSize: "0.875rem",
+                fontSize: "0.8125rem",
                 fontWeight: 500,
                 color: "#1e40af",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.5rem"
+                gap: "0.375rem"
               }}>
                 <span>⚡</span>
                 Fast AI Processing
               </div>
               <div style={{
-                padding: "0.625rem 1.25rem",
-                background: "#f5f3ff",
-                border: "1px solid #e9d5ff",
+                padding: "0.5rem 1rem",
+                background: "rgba(245, 243, 255, 0.6)",
+                backdropFilter: "blur(8px)",
+                border: "1px solid rgba(233, 213, 255, 0.8)",
                 borderRadius: "999px",
-                fontSize: "0.875rem",
+                fontSize: "0.8125rem",
                 fontWeight: 500,
                 color: "#6b21a8",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.5rem"
+                gap: "0.375rem"
               }}>
                 <span>👥</span>
                 Speaker Identification
               </div>
               <div style={{
-                padding: "0.625rem 1.25rem",
-                background: "#f0fdf4",
-                border: "1px solid #bbf7d0",
+                padding: "0.5rem 1rem",
+                background: "rgba(240, 253, 244, 0.6)",
+                backdropFilter: "blur(8px)",
+                border: "1px solid rgba(187, 247, 208, 0.8)",
                 borderRadius: "999px",
-                fontSize: "0.875rem",
+                fontSize: "0.8125rem",
                 fontWeight: 500,
                 color: "#15803d",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.5rem"
+                gap: "0.375rem"
               }}>
                 <span>📊</span>
                 Actionable Insights
@@ -351,14 +457,12 @@ export default function UploadPage() {
                     </div>
                   )}
                   <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: "#111827", margin: 0 }}>
-                    {isUploading ? "Uploading File..." : stageForStatus(status)}
+                    {isRequestInProgress && !meetingId ? "Uploading File..." : stageForStatus(status)}
                   </h2>
                 </div>
-                {!isUploading && (
-                  <p style={{ fontSize: "0.9rem", color: "#6b7280", margin: 0, marginLeft: "3.25rem" }}>
-                    {stage || helperForStatus(status)}
-                  </p>
-                )}
+                <p style={{ fontSize: "1rem", color: "#6b7280", margin: 0, marginLeft: "3.25rem", fontWeight: 500 }}>
+                  {isRequestInProgress && !meetingId ? "Sending file to server" : (stage || helperForStatus(status))}
+                </p>
               </div>
 
               {/* Progress Bar */}
@@ -366,11 +470,11 @@ export default function UploadPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
                   <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#6b7280" }}>Progress</span>
                   <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#3b82f6" }}>
-                    {isUploading ? `${uploadProgress}%` : `${Math.round(progress)}%`}
+                    {isRequestInProgress && !meetingId ? "..." : `${Math.round(progress)}%`}
                   </span>
                 </div>
                 <div style={{ background: "#e5e7eb", height: "10px", borderRadius: "999px", overflow: "hidden" }}>
-                  {isUploading ? (
+                  {isRequestInProgress && !meetingId ? (
                     <div style={{
                       width: "100%",
                       height: "100%",
@@ -380,7 +484,7 @@ export default function UploadPage() {
                     }} />
                   ) : (
                     <div style={{
-                      width: isUploading ? `${uploadProgress}%` : `${Math.round(progress)}%`,
+                      width: `${Math.round(progress)}%`,
                       height: "100%",
                       background: status.startsWith("error")
                         ? "linear-gradient(90deg, #ef4444 0%, #dc2626 100%)"
@@ -394,81 +498,126 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {/* Stage Stepper */}
-              {!isUploading && isProcessing && (
+              {/* Accordion for Detailed Substeps */}
+              {(isUploading || isProcessing) && (
                 <div style={{ marginBottom: "2rem" }}>
-                  <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "1rem" }}>
-                    Processing Stages
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {STAGES.filter(s => s.key !== "completed").map((stageItem, idx) => {
-                      const currentStageIdx = STAGES.findIndex(s => s.key === status);
-                      const isCurrentStage = stageItem.key === status;
-                      const isPastStage = idx < currentStageIdx;
-                      const isFutureStage = idx > currentStageIdx;
-                      
-                      return (
-                        <div
-                          key={stageItem.key}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.75rem",
-                            padding: "0.75rem 1rem",
-                            background: isCurrentStage ? "#eff6ff" : isPastStage ? "#f0fdf4" : "#fafafa",
-                            border: `1px solid ${isCurrentStage ? "#3b82f6" : isPastStage ? "#86efac" : "#e5e7eb"}`,
-                            borderRadius: "8px",
-                            transition: "all 0.3s ease",
-                            opacity: isFutureStage ? 0.5 : 1
-                          }}
-                        >
-                          <div style={{
-                            width: "2rem",
-                            height: "2rem",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#e5e7eb",
-                            borderRadius: "6px",
-                            fontSize: "1rem",
-                            flexShrink: 0,
-                            transition: "all 0.3s ease"
-                          }}>
-                            {isPastStage ? "✓" : stageItem.icon}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{
-                              fontSize: "0.875rem",
-                              fontWeight: 600,
-                              color: isCurrentStage ? "#1e40af" : isPastStage ? "#065f46" : "#6b7280",
-                              marginBottom: "0.125rem"
-                            }}>
-                              {stageItem.label}
-                              {isCurrentStage && (
-                                <span style={{
-                                  marginLeft: "0.5rem",
-                                  display: "inline-flex",
-                                  alignItems: "center"
+                  <button
+                    onClick={() => setShowDetails(!showDetails)}
+                    style={{
+                      width: "100%",
+                      padding: "0.875rem 1rem",
+                      background: "#f9fafb",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "8px",
+                      fontSize: "0.875rem",
+                      fontWeight: 600,
+                      color: "#374151",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      transition: "all 0.2s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#f3f4f6";
+                      e.currentTarget.style.borderColor = "#d1d5db";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "#f9fafb";
+                      e.currentTarget.style.borderColor = "#e5e7eb";
+                    }}
+                  >
+                    <span>{showDetails ? "Hide" : "Show"} Processing Details</span>
+                    {showDetails ? (
+                      <ChevronUp style={{ width: "1rem", height: "1rem" }} />
+                    ) : (
+                      <ChevronDown style={{ width: "1rem", height: "1rem" }} />
+                    )}
+                  </button>
+
+                  {showDetails && (
+                    <div style={{ 
+                      marginTop: "1rem",
+                      padding: "1rem",
+                      background: "#fafafa",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "8px",
+                      animation: "fadeIn 0.3s ease-out"
+                    }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
+                        All Processing Stages
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {STAGES.filter(s => s.key !== "completed").map((stageItem, idx) => {
+                          const currentStageIdx = STAGES.findIndex(s => s.key === status);
+                          const isCurrentStage = stageItem.key === status;
+                          const isPastStage = idx < currentStageIdx;
+                          const isFutureStage = idx > currentStageIdx;
+                          
+                          return (
+                            <div
+                              key={stageItem.key}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.75rem",
+                                padding: "0.625rem 0.875rem",
+                                background: isCurrentStage ? "#eff6ff" : isPastStage ? "#f0fdf4" : "#ffffff",
+                                border: `1px solid ${isCurrentStage ? "#3b82f6" : isPastStage ? "#86efac" : "#e5e7eb"}`,
+                                borderRadius: "6px",
+                                transition: "all 0.3s ease",
+                                opacity: isFutureStage ? 0.5 : 1
+                              }}
+                            >
+                              <div style={{
+                                width: "1.75rem",
+                                height: "1.75rem",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#e5e7eb",
+                                borderRadius: "6px",
+                                fontSize: "0.875rem",
+                                flexShrink: 0,
+                                transition: "all 0.3s ease"
+                              }}>
+                                {isPastStage ? "✓" : stageItem.icon}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  fontSize: "0.8rem",
+                                  fontWeight: 600,
+                                  color: isCurrentStage ? "#1e40af" : isPastStage ? "#065f46" : "#6b7280",
+                                  marginBottom: "0.125rem"
                                 }}>
-                                  <Loader2 style={{
-                                    width: "0.875rem",
-                                    height: "0.875rem",
-                                    animation: "spin 1s linear infinite"
-                                  }} />
-                                </span>
-                              )}
+                                  {stageItem.label}
+                                  {isCurrentStage && (
+                                    <span style={{
+                                      marginLeft: "0.5rem",
+                                      display: "inline-flex",
+                                      alignItems: "center"
+                                    }}>
+                                      <Loader2 style={{
+                                        width: "0.75rem",
+                                        height: "0.75rem",
+                                        animation: "spin 1s linear infinite"
+                                      }} />
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{
+                                  fontSize: "0.7rem",
+                                  color: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#9ca3af"
+                                }}>
+                                  {stageItem.helper}
+                                </div>
+                              </div>
                             </div>
-                            <div style={{
-                              fontSize: "0.75rem",
-                              color: isCurrentStage ? "#3b82f6" : isPastStage ? "#10b981" : "#9ca3af"
-                            }}>
-                              {isCurrentStage && stage ? stage : stageItem.helper}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
