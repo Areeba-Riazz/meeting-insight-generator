@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -72,11 +72,11 @@ class AgentOrchestrator:
 
         payload: Dict[str, Any] = {
             "text": transcript.text,
-            "segments": [seg.__dict__ for seg in transcript.segments],
+            "segments": [asdict(seg) for seg in transcript.segments],
             "meeting_id": meeting_id,
         }
 
-        results: Dict[str, Any] = {"transcript": transcript.__dict__}
+        results: Dict[str, Any] = {"transcript": asdict(transcript)}
 
         # Run agents with granular progress tracking and error resilience
         total_agents = len(self.agents)

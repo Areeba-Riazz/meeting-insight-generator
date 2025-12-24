@@ -10,81 +10,115 @@ from .llm_client import get_mistral_completion
 
 class SummaryAgent(BaseAgent):
     """
-    Generate comprehensive meeting summary using Mistral AI.
-    Creates extractive (key quotes) and abstractive (AI-generated) summaries.
+    Generate comprehensive meeting summary using Mistral AI and extractive methods.
+    
+    - **Paragraph Summary**: Mistral AI-generated comprehensive overview
+    - **Bullet Points**: Mistral AI-generated key takeaways (5-8 points, no timestamps)
+    - **Key Excerpts**: Verbatim quotes from transcript with timestamps
+    
+    Bullet points are AI-generated insights.
+    Key excerpts are actual quotes from what was said in the meeting.
     """
     name = "summary_agent"
 
     def __init__(self, token: Optional[str] = None) -> None:
         self.token = token or os.getenv("MISTRAL_API_KEY")
 
-    def _create_extractive_summary(self, text: str, segments: list = None, num_sentences: int = 5):
-        """Extract most important sentences for key excerpts with timestamps."""
-        sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip() and len(s.strip()) > 20]
+    def _extract_key_quotes(self, text: str, segments: list = None, num_quotes: int = 5) -> dict:
+        """
+        Extract actual verbatim quotes from the transcript with timestamps.
+        These are real excerpts from what was said, not AI-generated summaries.
         
-        # Score sentences by length, position, and key indicators
-        scored_sentences = []
-        key_indicators = ['important', 'key', 'main', 'critical', 'essential', 'decided', 'agreed', 'action']
+        Args:
+            text: Full transcript text
+            segments: List of transcript segments with timestamps
+            num_quotes: Number of key quotes to extract
+            
+        Returns:
+            Dictionary with excerpts list (quotes with timestamps) and text string
+        """
+        if not segments:
+            # If no segments, extract sentences from text without timestamps
+            sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip() and len(s.strip()) > 30]
+            top_quotes = sentences[:num_quotes]
+            excerpts = [{"text": quote, "timestamp": None} for quote in top_quotes]
+            return {"excerpts": excerpts, "text": '. '.join(top_quotes) + '.'}
         
-        for i, sentence in enumerate(sentences):
-            words = sentence.lower().split()
+        # Score segments by importance indicators
+        scored_segments = []
+        key_indicators = ['important', 'key', 'decided', 'agreed', 'action', 'need to', 'should', 
+                         'will', 'must', 'critical', 'essential', 'main point', 'conclusion']
+        
+        for seg in segments:
+            seg_text = seg.get('text', '').strip()
+            if len(seg_text) < 30:  # Skip very short segments
+                continue
             
-            # Length score (prefer medium-length sentences)
-            length_score = min(len(words) / 25.0, 1.0)
+            words = seg_text.lower().split()
             
-            # Position score (prefer early and late sentences)
-            position = i / len(sentences)
-            position_score = 1.0 - abs(0.5 - position)
+            # Length score (prefer medium-length quotes)
+            length_score = min(len(words) / 20.0, 1.0)
             
-            # Keyword score
-            keyword_score = sum(1 for indicator in key_indicators if indicator in sentence.lower()) / len(key_indicators)
+            # Keyword score (look for important phrases)
+            keyword_score = sum(1 for indicator in key_indicators if indicator in seg_text.lower())
+            keyword_score = min(keyword_score / 3.0, 1.0)  # Normalize
             
             # Combined score
-            score = (length_score * 0.4) + (position_score * 0.3) + (keyword_score * 0.3)
-            scored_sentences.append((score, sentence))
+            score = (length_score * 0.5) + (keyword_score * 0.5)
+            
+            scored_segments.append({
+                'score': score,
+                'text': seg_text,
+                'start': seg.get('start', 0),
+                'end': seg.get('end', 0)
+            })
         
-        # Sort and select top sentences
-        scored_sentences.sort(reverse=True, key=lambda x: x[0])
-        top_sentences = [s[1] for s in scored_sentences[:min(num_sentences, len(scored_sentences))]]
+        # Sort by score and take top quotes
+        scored_segments.sort(key=lambda x: x['score'], reverse=True)
+        top_segments = scored_segments[:num_quotes]
         
-        # Find timestamps for each sentence by matching to segments
+        # Sort by timestamp for chronological order
+        top_segments.sort(key=lambda x: x['start'])
+        
+        # Create excerpts with timestamps
         excerpts = []
-        if segments:
-            for sentence in top_sentences:
-                # Find the segment that contains this sentence (or part of it)
-                timestamp = None
-                for seg in segments:
-                    seg_text = seg.get('text', '').strip()
-                    # Check if sentence is in segment or vice versa (fuzzy match)
-                    if sentence[:30].lower() in seg_text.lower() or seg_text[:30].lower() in sentence.lower():
-                        timestamp = seg.get('start', 0)
-                        break
-                
-                excerpts.append({
-                    "text": sentence,
-                    "timestamp": timestamp if timestamp is not None else 0
-                })
-        else:
-            # If no segments, return sentences without timestamps
-            excerpts = [{"text": s, "timestamp": None} for s in top_sentences]
+        for seg in top_segments:
+            excerpts.append({
+                "text": seg['text'],
+                "timestamp": seg['start']
+            })
         
-        # Also return as string for backward compatibility
-        excerpt_string = '. '.join(top_sentences) + '.' if top_sentences else ""
+        # Create text string
+        excerpt_string = '. '.join([e['text'] for e in excerpts]) + '.' if excerpts else ""
         
         return {"excerpts": excerpts, "text": excerpt_string}
 
     async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Generate comprehensive meeting summary.
+        Generate comprehensive meeting summary using Mistral AI and extractive methods.
         
         Returns:
             {
                 "summary": {
-                    "extractive": {"excerpts": [...], "text": "..."},
-                    "abstractive": "AI-generated summary...",
-                    "combined": "Main summary..."
+                    "extractive": {
+                        "excerpts": [
+                            {"text": "Actual quote from transcript", "timestamp": 45.2},
+                            ...
+                        ],
+                        "text": "Combined quotes as text"
+                    },
+                    "abstractive": {
+                        "paragraph": "Mistral AI-generated paragraph summary",
+                        "bullets": ["AI-generated bullet 1", "AI-generated bullet 2", ...]
+                    },
+                    "combined": "Paragraph summary (for backward compatibility)"
                 }
             }
+            
+        Note: 
+        - extractive.excerpts = Verbatim quotes from transcript WITH timestamps
+        - abstractive.bullets = AI-generated key points WITHOUT timestamps
+        - abstractive.paragraph = AI-generated comprehensive summary
         """
         text: str = payload.get("text", "")
         segments: list = payload.get("segments", [])
@@ -98,11 +132,8 @@ class SummaryAgent(BaseAgent):
         if len(words) > max_words:
             text = ' '.join(words[:max_words]) + "..."
         
-        # Generate extractive summary (key excerpts) with timestamps
-        extractive = self._create_extractive_summary(text, segments=segments, num_sentences=5)
-        
-        # Generate abstractive summary using Mistral AI
-        prompt = f"""You are an expert at summarizing meetings. Generate a comprehensive, well-structured summary of this meeting transcript.
+        # Generate paragraph summary using Mistral AI
+        paragraph_prompt = f"""You are an expert at summarizing meetings. Generate a comprehensive, well-structured summary of this meeting transcript.
 
 Transcript:
 {text}
@@ -116,26 +147,80 @@ Create a clear, professional summary that:
 
 Summary:"""
 
+        # Generate bullet point summary using Mistral AI
+        bullet_prompt = f"""You are an expert at summarizing meetings. Generate a concise bullet-point summary of this meeting transcript.
+
+Transcript:
+{text}
+
+Create 5-8 key bullet points that capture:
+- Main topics discussed
+- Key decisions made
+- Important action items
+- Critical outcomes or conclusions
+
+Format as a simple list with each point on a new line, starting with a dash (-). Be concise and specific.
+
+Bullet Points:"""
+
         try:
-            abstractive = await get_mistral_completion(
-                prompt=prompt,
+            # Get paragraph summary
+            paragraph_summary = await get_mistral_completion(
+                prompt=paragraph_prompt,
                 max_tokens=500,
                 temperature=0.3,
                 api_key=self.token
             )
-            abstractive = abstractive.strip() if abstractive else None
+            paragraph_summary = paragraph_summary.strip() if paragraph_summary else None
+            
+            # Get bullet point summary
+            bullet_summary = await get_mistral_completion(
+                prompt=bullet_prompt,
+                max_tokens=400,
+                temperature=0.3,
+                api_key=self.token
+            )
+            
+            # Parse bullet points into list
+            bullet_points = []
+            if bullet_summary:
+                bullet_summary = bullet_summary.strip()
+                # Split by newlines and clean up
+                lines = [line.strip() for line in bullet_summary.split('\n') if line.strip()]
+                for line in lines:
+                    # Remove leading dashes, asterisks, or numbers
+                    cleaned = re.sub(r'^[-*•]\s*', '', line)
+                    cleaned = re.sub(r'^\d+\.\s*', '', cleaned)
+                    if cleaned:
+                        bullet_points.append(cleaned)
+            
         except Exception as e:
             print(f"[SummaryAgent] Mistral API error: {e}")
-            abstractive = None
+            paragraph_summary = None
+            bullet_points = []
         
-        # Fallback to extractive if AI fails
-        if not abstractive or len(abstractive) < 50:
-            abstractive = extractive.get("text", "")
+        # Extract actual verbatim quotes from the transcript with timestamps
+        # These are real quotes from what was said, not AI-generated
+        extractive = self._extract_key_quotes(text, segments=segments, num_quotes=5)
+        
+        # Fallback for paragraph if AI failed
+        if not paragraph_summary or len(paragraph_summary) < 50:
+            paragraph_summary = extractive.get("text", "No summary available")
+        
+        # Fallback for bullets if AI failed
+        if not bullet_points:
+            bullet_points = [excerpt["text"] for excerpt in extractive.get("excerpts", [])[:5]]
+        
+        # Abstractive contains AI-generated content (no timestamps on bullets)
+        abstractive_result = {
+            "paragraph": paragraph_summary,
+            "bullets": bullet_points  # AI-generated key points (no timestamps)
+        }
         
         summary_result = {
-            "extractive": extractive,
-            "abstractive": abstractive,
-            "combined": abstractive
+            "extractive": extractive,  # Verbatim quotes with timestamps
+            "abstractive": abstractive_result,  # AI-generated summaries
+            "combined": paragraph_summary  # Keep paragraph as default combined view
         }
         
         return {"summary": summary_result}

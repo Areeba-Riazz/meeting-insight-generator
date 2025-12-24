@@ -52,6 +52,7 @@ logs/
 # Storage (audio files, transcripts, vectors)
 backend/__pycache__/*
 backend/storage/*
+test/*
 !backend/storage/.gitkeep
 
 # Frontend

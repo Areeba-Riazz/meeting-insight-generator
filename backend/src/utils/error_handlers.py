@@ -320,10 +320,23 @@ def suppress_asyncio_socket_shutdown_errors() -> None:
             logger.debug(f"[AsyncIO] Suppressed broken pipe error during shutdown: {exception}")
             return
         
-        # Handle other exceptions normally
-        logger.error(f"[AsyncIO] Uncaught exception in event loop: {context}", exc_info=exception)
+        # Log other exceptions normally (but not as ERROR to avoid noise)
+        # These might be harmless connection issues during streaming
+        if "transport" in str(context).lower() or "connection" in str(context).lower():
+            logger.debug(f"[AsyncIO] Transport/connection event: {context}")
+        else:
+            logger.warning(f"[AsyncIO] Uncaught exception in event loop: {context}", exc_info=exception)
     
-    # Set the custom exception handler
-    loop = asyncio.get_event_loop()
-    loop.set_exception_handler(handle_exception)
-    logger.info("[AsyncIO] Socket shutdown error suppression enabled")
+    # Set the custom exception handler on the running loop
+    try:
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(handle_exception)
+        logger.info("[AsyncIO] Socket shutdown error suppression enabled")
+    except RuntimeError:
+        # No running loop yet, try to get the event loop
+        try:
+            loop = asyncio.get_event_loop()
+            loop.set_exception_handler(handle_exception)
+            logger.info("[AsyncIO] Socket shutdown error suppression enabled (on default loop)")
+        except Exception as e:
+            logger.warning(f"[AsyncIO] Could not set exception handler: {e}")

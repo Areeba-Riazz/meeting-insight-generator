@@ -29,7 +29,17 @@ export type InsightsPayload = {
   topics?: Array<{ topic?: string; start?: number; end?: number; summary?: string }>;
   decisions?: Array<{ decision?: string; participants?: string[]; rationale?: string; evidence?: string }>;
   action_items?: Array<{ action?: string; assignee?: string | null; due?: string | null; evidence?: string }>;
-  sentiments?: Array<{ sentiment?: string; rationale?: string; start?: number; end?: number; text?: string }>;
+  sentiment?: {
+    overall?: string;
+    score?: number;
+    segments?: Array<{
+      sentiment: string;
+      score: number;
+      text: string;
+      start?: number;
+      end?: number;
+    }>;
+  };
   summary?: string;
 };
 
