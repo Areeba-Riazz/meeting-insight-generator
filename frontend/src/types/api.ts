@@ -47,3 +47,42 @@ export type InsightsResponse = {
   meeting_id: string;
   insights: InsightsPayload;
 };
+
+export type SearchResult = {
+  text: string;
+  meeting_id: string;
+  segment_type: string;
+  timestamp?: number | null;
+  segment_index?: number | null;
+  similarity_score: number;
+  distance: number;
+  additional_data?: Record<string, any> | null;
+};
+
+export type SearchRequest = {
+  query: string;
+  top_k?: number;
+  segment_types?: string[];
+  meeting_ids?: string[];
+  min_score?: number;
+  page?: number;
+  page_size?: number;
+};
+
+export type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+  total_results: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  segment_types_filter?: string[] | null;
+  meeting_ids_filter?: string[] | null;
+};
+
+export type SearchStats = {
+  total_vectors: number;
+  embedding_dimension?: number | null;
+  meetings: Record<string, number>;
+  segment_types: Record<string, number>;
+};

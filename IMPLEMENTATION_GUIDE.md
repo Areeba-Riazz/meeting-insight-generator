@@ -20,7 +20,7 @@
 ### Core Framework & Libraries
 
 #### 1. **Agent Framework: LangChain**
-- **Version**: `langchain>=0.1.0,<0.3.0`
+- **Version**: `langchain>=0.3.0` (Note: 0.3+ required for numpy 2.x compatibility)
 - **Purpose**: Orchestrates multi-agent workflows, manages LLM interactions
 - **Key Components**:
   - `langchain.agents`: Agent creation and execution

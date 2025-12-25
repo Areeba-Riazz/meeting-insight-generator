@@ -1,3 +1,2 @@
 # This file ensures the storage directory is tracked by git
-# Actual files in subdirectories are ignored
-
+# Actual storage files (meetings, vectors) are ignored

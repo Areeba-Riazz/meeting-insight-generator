@@ -20,6 +20,7 @@ from src.services.agent_orchestrator import AgentOrchestrator
 from src.services.pipeline_store import PipelineStore
 from src.services.transcript_store import TranscriptStore
 from src.services.transcription_service import TranscriptionService
+from src.services.vector_store_service import VectorStoreService
 from src.utils.error_handlers import handle_connection_errors
 from src.utils.validation import validate_file
 
@@ -38,6 +39,10 @@ transcription_service = TranscriptionService(
     diarization_enabled=True,
     diarization_token=os.getenv("HUGGINGFACE_TOKEN"),
     transcript_store=transcript_store,
+)
+vector_store = VectorStoreService(
+    vector_store_path=Path("storage/vectors"),
+    embedding_model_name=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
 )
 
 
@@ -253,6 +258,38 @@ async def process_meeting(meeting_id: str, audio_path: Path) -> None:
             except Exception as e:
                 logger.error(f"[Upload] Unexpected error saving insights: {e}")
                 break
+        
+        # Step 4: Add embeddings to vector store
+        update_status("saving_results", progress=98, stage_desc="Indexing for search")
+        try:
+            transcript_data = results.get("transcript", {})
+            topics = results.get("topics", []) or results.get("topic_agent", {}).get("topics", [])
+            decisions = results.get("decisions", []) or results.get("decision_agent", {}).get("decisions", [])
+            action_items = results.get("action_items", []) or results.get("action_item_agent", {}).get("action_items", [])
+            summary = results.get("summary", "") or results.get("summary_agent", {}).get("summary", "")
+            
+            # Handle case where agents return dicts with error messages
+            if isinstance(topics, str) and topics.startswith("error"):
+                topics = []
+            if isinstance(decisions, str) and decisions.startswith("error"):
+                decisions = []
+            if isinstance(action_items, str) and action_items.startswith("error"):
+                action_items = []
+            if isinstance(summary, str) and summary.startswith("error"):
+                summary = None
+            
+            vectors_added = vector_store.add_meeting_embeddings(
+                meeting_id=meeting_id,
+                transcript=transcript_data,
+                topics=topics if isinstance(topics, list) else None,
+                decisions=decisions if isinstance(decisions, list) else None,
+                action_items=action_items if isinstance(action_items, list) else None,
+                summary=summary if summary else None,
+            )
+            logger.info(f"[Upload] Added {vectors_added} vectors to vector store for {meeting_id}")
+        except Exception as e:
+            logger.warning(f"[Upload] Error adding vectors to vector store: {e}")
+            # Non-critical error - continue anyway
         
         pipeline_store.set_status(meeting_id, "completed", progress=100, stage="Completed")
         logger.info(f"[Upload] Meeting {meeting_id} processing completed")

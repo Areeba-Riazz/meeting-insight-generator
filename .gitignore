@@ -50,10 +50,16 @@ logs/
 *.log
 
 # Storage (audio files, transcripts, vectors)
-backend/__pycache__/*
 backend/storage/*
-test/*
 !backend/storage/.gitkeep
+!backend/storage/vectors/.gitkeep
+
+# Python cache (all locations)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
 
 # Frontend
 frontend/node_modules/
@@ -67,6 +73,7 @@ frontend/.env*.local
 *.db
 *.sqlite
 *.sqlite3
+backend/meeting_insights.db
 
 # Testing
 .pytest_cache/
@@ -84,6 +91,14 @@ htmlcov/
 *.safetensors
 *.pt
 *.pth
+
+# Vector store files (large binary files - should not be committed)
+backend/storage/vectors/*.index
+backend/storage/vectors/metadata.json
+
+# Diagnostic and test scripts (optional - remove if not needed)
+# backend/scripts/diagnose_vector_store.py
+# backend/scripts/test_vector_store.py
 
 # Docker
 .dockerignore

@@ -1,4 +1,4 @@
-import type { UploadResponse, StatusResponse, InsightsResponse } from "../types/api";
+import type { UploadResponse, StatusResponse, InsightsResponse, SearchRequest, SearchResponse, SearchStats } from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
@@ -94,6 +94,29 @@ export async function listMeetings(): Promise<{ meetings: Meeting[] }> {
   const res = await fetch(`${API_BASE}/api/v1/meetings`);
   if (!res.ok) {
     throw new Error(`Failed to fetch meetings: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function searchMeetings(request: SearchRequest): Promise<SearchResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Search failed: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getSearchStats(): Promise<SearchStats> {
+  const res = await fetch(`${API_BASE}/api/v1/search/stats`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch search stats: ${res.statusText}`);
   }
   return res.json();
 }
