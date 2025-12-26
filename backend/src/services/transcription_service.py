@@ -1,5 +1,21 @@
 from __future__ import annotations
 
+
+# CRITICAL: Patch torch.load BEFORE any imports
+import torch
+_original_torch_load = torch.load
+def force_weights_only_false(f, *args, **kwargs):
+    kwargs['weights_only'] = False
+    return _original_torch_load(f, *args, **kwargs)
+torch.load = force_weights_only_false
+
+# Now your normal imports
+from pathlib import Path
+from typing import Optional, Callable
+import whisperx
+# ... rest of your imports
+
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +87,7 @@ class TranscriptionService:
                 self._model = whisperx.load_model(
                     self.model_name, 
                     self.device, 
-                    compute_type="int8" if self.device == "cpu" else "float16"
+                    compute_type="float32" if self.device == "cpu" else "float16"
                 )
                 print(f"[TranscriptionService] WhisperX model loaded successfully")
                 self._use_whisperx = True
@@ -150,6 +166,7 @@ class TranscriptionService:
         # Step 2: Align for better timestamps
         notify("transcribing", 45, "Aligning timestamps")
         time.sleep(0.5)
+        alignment_successful = False
         try:
             model_a, metadata = whisperx.load_align_model(
                 language_code=result["language"], 
@@ -163,38 +180,96 @@ class TranscriptionService:
                 self.device, 
                 return_char_alignments=False
             )
+            alignment_successful = True
             print(f"[TranscriptionService] Alignment completed for language: {result.get('language', 'unknown')}")
+            
+            # DEBUG: Check result structure
+            print(f"[DEBUG] Alignment result keys: {list(result.keys())}")
+            if 'segments' in result and len(result['segments']) > 0:
+                print(f"[DEBUG] First segment keys: {list(result['segments'][0].keys())}")
+                print(f"[DEBUG] First segment has 'words': {'words' in result['segments'][0]}")
+            
         except Exception as e:
             print(f"[TranscriptionService] Alignment failed: {e}, continuing without alignment")
 
-        # Step 3: Diarize (assign speakers)
+        # Step 3: Diarize (assign speakers) - UPDATED FOR WHISPERX 3.7+
         segments_with_speakers = []
-        if self.diarization_enabled and self.diarization_token:
-            notify("diarizing", 60, "Identifying speakers with WhisperX")
+        # Step 3: Diarize (assign speakers) - UPDATED FOR WHISPERX 3.7+
+        segments_with_speakers = []
+        if self.diarization_enabled and self.diarization_token and alignment_successful:
+            notify("diarizing", 60, "Identifying speakers with pyannote")
             time.sleep(0.5)
             try:
-                # Load pyannote diarization pipeline through whisperx
+                # WhisperX 3.7+ uses pyannote.audio.Pipeline directly
                 from pyannote.audio import Pipeline
+                import pandas as pd
                 
-                print(f"[TranscriptionService] Loading diarization pipeline...")
+                print(f"[TranscriptionService] Loading diarization pipeline (pyannote)...")
+                
                 diarize_model = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
                     use_auth_token=self.diarization_token
                 )
                 
-                # Run diarization
+                # Run diarization - pass the audio file path
                 print(f"[TranscriptionService] Running speaker diarization...")
-                diarize_segments = diarize_model(audio_path)
+                diarize_segments = diarize_model(str(audio_path))
                 
-                # Assign speakers to words/segments
-                result_with_speakers = whisperx.assign_word_speakers(diarize_segments, result)
+                print(f"[TranscriptionService] Assigning speakers to words...")
+                
+                # Convert pyannote Annotation to list format for whisperx
+                diarize_list = []
+                for turn, _, speaker in diarize_segments.itertracks(yield_label=True):
+                    diarize_list.append({
+                        'segment': {'start': turn.start, 'end': turn.end},
+                        'label': speaker
+                    })
+                
+                print(f"[DEBUG] Diarization found {len(diarize_list)} speaker segments")
+                
+                if len(diarize_list) == 0:
+                    print(f"[TranscriptionService] Warning: No speakers detected by diarization!")
+                    result_with_speakers = result
+                else:
+                    # Create DataFrame for whisperx compatibility
+                    diarize_df = pd.DataFrame([{
+                        'start': item['segment']['start'],
+                        'end': item['segment']['end'],
+                        'speaker': item['label']
+                    } for item in diarize_list])
+                    
+                    print(f"[DEBUG] Diarization DataFrame shape: {diarize_df.shape}")
+                    print(f"[DEBUG] Unique speakers: {diarize_df['speaker'].unique()}")
+                    
+                    # Manually assign speakers to segments based on overlap
+                    for seg in result.get("segments", []):
+                        seg_start = seg.get('start', 0)
+                        seg_end = seg.get('end', 0)
+                        seg_mid = (seg_start + seg_end) / 2
+                        
+                        # Find speaker with maximum overlap
+                        best_speaker = None
+                        max_overlap = 0
+                        
+                        for _, row in diarize_df.iterrows():
+                            overlap_start = max(seg_start, row['start'])
+                            overlap_end = min(seg_end, row['end'])
+                            overlap = max(0, overlap_end - overlap_start)
+                            
+                            if overlap > max_overlap:
+                                max_overlap = overlap
+                                best_speaker = row['speaker']
+                        
+                        seg['speaker'] = best_speaker
+                    
+                    result_with_speakers = result
                 
                 # Count unique speakers
                 speakers = set()
                 for seg in result_with_speakers.get("segments", []):
                     if seg.get("speaker"):
                         speakers.add(seg["speaker"])
-                print(f"[TranscriptionService] WhisperX identified {len(speakers)} unique speakers: {speakers}")
+                print(f"[TranscriptionService] Identified {len(speakers)} unique speakers: {speakers}")
                 
                 # Convert to our format
                 for seg in result_with_speakers.get("segments", []):
@@ -210,11 +285,11 @@ class TranscriptionService:
                 labeled_count = sum(1 for s in segments_with_speakers if s.speaker is not None)
                 print(f"[TranscriptionService] Assigned speaker labels to {labeled_count}/{len(segments_with_speakers)} segments")
                 
-            except Exception as e:
-                print(f"[TranscriptionService] Diarization failed: {e}")
-                print(f"[TranscriptionService] Make sure HUGGINGFACE_TOKEN is set and you've accepted terms at:")
-                print(f"[TranscriptionService] https://huggingface.co/pyannote/speaker-diarization-3.1")
-                print(f"[TranscriptionService] https://huggingface.co/pyannote/segmentation-3.0")
+            except KeyError as e:
+                print(f"[TranscriptionService] Diarization KeyError: {e}")
+                import traceback
+                print(traceback.format_exc())
+                print(f"[TranscriptionService] Falling back to segments without speaker labels")
                 # Fall back to segments without speakers
                 for seg in result.get("segments", []):
                     segments_with_speakers.append(
@@ -225,21 +300,21 @@ class TranscriptionService:
                             speaker=None,
                         )
                     )
-        else:
-            if not self.diarization_enabled:
-                print("[TranscriptionService] Diarization is disabled")
-            else:
-                print("[TranscriptionService] HUGGINGFACE_TOKEN not set, skipping diarization")
-            # No diarization
-            for seg in result.get("segments", []):
-                segments_with_speakers.append(
-                    TranscriptionSegment(
-                        text=seg.get("text", "").strip(),
-                        start=seg.get("start", 0.0),
-                        end=seg.get("end", 0.0),
-                        speaker=None,
+            except Exception as e:
+                print(f"[TranscriptionService] Diarization failed: {e}")
+                import traceback
+                print(traceback.format_exc())
+                # Fall back to segments without speakers
+                for seg in result.get("segments", []):
+                    segments_with_speakers.append(
+                        TranscriptionSegment(
+                            text=seg.get("text", "").strip(),
+                            start=seg.get("start", 0.0),
+                            end=seg.get("end", 0.0),
+                            speaker=None,
+                        )
                     )
-                )
+
 
         # Build full text from segments
         full_text = " ".join(seg.text for seg in segments_with_speakers if seg.text)
@@ -249,7 +324,7 @@ class TranscriptionService:
             segments=segments_with_speakers,
             model=f"whisperx-{self.model_name}",
         )
-
+    
     def _transcribe_with_vanilla_whisper(
         self,
         audio_path: Path,
