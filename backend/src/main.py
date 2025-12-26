@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .api.routes import api_router
-
+from .utils.error_handlers import suppress_asyncio_socket_shutdown_errors
 
 class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
@@ -20,15 +20,17 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
 
-
 settings = get_settings()
 
 app = FastAPI(title="Meeting Insight Generator API", debug=settings.debug)
+
+# Suppress harmless asyncio socket shutdown errors during streaming
+# This reduces log noise when clients disconnect during video streaming
+suppress_asyncio_socket_shutdown_errors()
 
 # CORS configuration
 app.add_middleware(
@@ -42,8 +44,6 @@ app.add_middleware(
 # Routers
 app.include_router(api_router)
 
-
 @app.get("/health", tags=["health"])
 async def health() -> dict:
     return {"status": "ok"}
-

@@ -12,8 +12,28 @@ type InsightsPayload = {
   topics?: any[];
   decisions?: any[];
   action_items?: any[];
-  sentiments?: any[];
-  summary?: string;
+  sentiment?: {
+    overall?: string;
+    score?: number;
+    segments?: Array<{
+      sentiment: string;
+      score: number;
+      text: string;
+      start?: number;
+      end?: number;
+    }>;
+  };
+  summary?: string | {
+    combined?: string;
+    abstractive?: string;
+    extractive?: {
+      text?: string;
+      excerpts?: Array<{
+        text: string;
+        timestamp?: number | null;
+      }>;
+    };
+  };
   [key: string]: any;
 };
 
@@ -55,6 +75,7 @@ const formatTime = (seconds: number): string => {
 export function InsightsViewer({ insights, videoUrl }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("transcript");
   const [currentTime, setCurrentTime] = useState(0);
+  const [summaryMode, setSummaryMode] = useState<'paragraph' | 'bullets'>('paragraph');
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -78,7 +99,7 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
 
   if (!insights) return null;
 
-  const { transcript, topics, decisions, action_items, sentiments, summary } = insights;
+  const { transcript, topics, decisions, action_items, sentiment, summary } = insights;
 
   const tabs: Array<{ id: TabId; label: string; icon: React.ReactNode; count?: number }> = [
     { id: "transcript", label: "Transcript", icon: <FileText style={{ width: "1rem", height: "1rem" }} /> },
@@ -86,7 +107,7 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
     { id: "topics", label: "Topics", icon: <Lightbulb style={{ width: "1rem", height: "1rem" }} />, count: topics?.length },
     { id: "decisions", label: "Decisions", icon: <CheckSquare style={{ width: "1rem", height: "1rem" }} />, count: decisions?.length },
     { id: "actions", label: "Action Items", icon: <TrendingUp style={{ width: "1rem", height: "1rem" }} />, count: action_items?.length },
-    { id: "sentiment", label: "Sentiment", icon: <BarChart3 style={{ width: "1rem", height: "1rem" }} />, count: sentiments?.length },
+    { id: "sentiment", label: "Sentiment", icon: <BarChart3 style={{ width: "1rem", height: "1rem" }} />, count: sentiment?.segments?.length },
   ];
 
   return (
@@ -305,140 +326,225 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
               <MessageSquare style={{ width: "1.25rem", height: "1.25rem", color: "#8b5cf6" }} />
               Meeting Summary
             </h3>
+            {/* Toggle between paragraph and bullets */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setSummaryMode('paragraph')}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '8px',
+                  border: summaryMode === 'paragraph' ? '1px solid #8b5cf6' : '1px solid #e5e7eb',
+                  background: summaryMode === 'paragraph' ? '#f5f3ff' : 'white',
+                  color: summaryMode === 'paragraph' ? '#5b21b6' : '#374151',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem'
+                }}
+              >
+                Paragraph
+              </button>
+              <button
+                type="button"
+                onClick={() => setSummaryMode('bullets')}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '8px',
+                  border: summaryMode === 'bullets' ? '1px solid #8b5cf6' : '1px solid #e5e7eb',
+                  background: summaryMode === 'bullets' ? '#f5f3ff' : 'white',
+                  color: summaryMode === 'bullets' ? '#5b21b6' : '#374151',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem'
+                }}
+              >
+                Bullet Points
+              </button>
+            </div>
             {summary ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {/* Handle both string and object format */}
-                {typeof summary === 'string' ? (
-                  <div style={{
-                    padding: "1.5rem",
-                    background: "#faf5ff",
-                    border: "1px solid #e9d5ff",
-                    borderRadius: "10px"
-                  }}>
-                    <p style={{
-                      fontSize: "0.95rem",
-                      lineHeight: 1.7,
-                      color: "#374151",
-                      margin: 0,
-                      whiteSpace: "pre-wrap"
-                    }}>
-                      {summary}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Combined/Main Summary */}
-                    {summary.combined && (
-                      <div style={{
-                        padding: "1.5rem",
-                        background: "#faf5ff",
-                        border: "1px solid #e9d5ff",
-                        borderRadius: "10px"
-                      }}>
-                        <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          📝 Main Summary
-                        </div>
-                        <p style={{
-                          fontSize: "0.95rem",
-                          lineHeight: 1.7,
-                          color: "#374151",
-                          margin: 0,
-                          whiteSpace: "pre-wrap"
+                {/* If user wants bullets, prefer extractive excerpts, else show paragraph/combined */}
+                {summaryMode === 'bullets' ? (
+                  (() => {
+                    // Prefer explicit excerpts list when available
+                    const excerpts = summary && typeof summary !== 'string' && summary.extractive && Array.isArray(summary.extractive.excerpts)
+                      ? summary.extractive.excerpts
+                      : null;
+
+                    if (excerpts && excerpts.length > 0) {
+                      return (
+                        <div style={{
+                          padding: "1.5rem",
+                          background: "#eff6ff",
+                          border: "1px solid #dbeafe",
+                          borderRadius: "10px"
                         }}>
-                          {summary.combined}
-                        </p>
-                      </div>
-                    )}
-                    
-                    {/* Extractive Summary - Key Excerpts */}
-                    {summary.extractive && (
-                      (() => {
-                        // Handle both old string format and new object format
-                        const extractiveData = typeof summary.extractive === 'string' 
-                          ? { text: summary.extractive, excerpts: [] }
-                          : summary.extractive;
-                        
-                        const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
-                        const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
-                        
-                        if (!shouldShow) return null;
-                        
-                        return (
-                          <div style={{
-                            padding: "1.5rem",
-                            background: "#eff6ff",
-                            border: "1px solid #dbeafe",
-                            borderRadius: "10px"
-                          }}>
-                            <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                              📋 Key Excerpts
-                            </div>
-                            
-                            {hasExcerpts ? (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                                {extractiveData.excerpts.map((excerpt: any, idx: number) => (
-                                  <div 
-                                    key={idx}
-                                    style={{
-                                      padding: "1rem",
-                                      background: "white",
-                                      borderLeft: "3px solid #3b82f6",
-                                      borderRadius: "6px",
-                                      position: "relative"
-                                    }}
-                                  >
-                                    <div style={{
-                                      fontSize: "0.95rem",
-                                      lineHeight: 1.7,
-                                      color: "#374151",
-                                      fontStyle: "italic",
-                                      marginBottom: "0.5rem"
-                                    }}>
-                                      "{excerpt.text}"
-                                    </div>
-                                    {excerpt.timestamp !== null && excerpt.timestamp !== undefined && (
-                                      <div 
-                                        onClick={() => videoUrl && seekToTime(excerpt.timestamp)}
-                                        style={{
-                                          fontSize: "0.75rem",
-                                          color: videoUrl ? "#3b82f6" : "#9ca3af",
-                                          fontFamily: "monospace",
-                                          fontWeight: 500,
-                                          cursor: videoUrl ? "pointer" : "default",
-                                          textDecoration: videoUrl ? "underline" : "none",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "0.25rem"
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          if (videoUrl) e.currentTarget.style.color = "#2563eb";
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          if (videoUrl) e.currentTarget.style.color = "#3b82f6";
-                                        }}
-                                      >
-                                        🕐 {formatTime(excerpt.timestamp)}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p style={{
-                                fontSize: "0.95rem",
-                                lineHeight: 1.7,
-                                color: "#374151",
-                                margin: 0,
-                                whiteSpace: "pre-wrap"
-                              }}>
-                                {extractiveData.text}
-                              </p>
-                            )}
+                          <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            📌 Key Points
                           </div>
-                        );
-                      })()
-                    )}
-                  </>
+                          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
+                            {excerpts.map((ex: any, i: number) => (
+                              <li key={i} style={{ marginBottom: '0.75rem' }}>
+                                {ex.text}
+                                {ex.timestamp !== null && ex.timestamp !== undefined && videoUrl && (
+                                  <div onClick={() => seekToTime(ex.timestamp)} style={{ fontSize: '0.75rem', color: '#3b82f6', fontFamily: 'monospace', cursor: 'pointer' }}>
+                                    🕐 {formatTime(ex.timestamp)}
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    }
+
+                    // Fallback: try to create bullets from combined/abstractive text
+                    const para = typeof summary === 'string' ? summary : (summary.combined || summary.abstractive || '');
+                    if (!para) return (
+                      <div style={{ padding: '1.5rem', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: '10px', color: '#9ca3af' }}>
+                        No bullet points available
+                      </div>
+                    );
+
+                    // Split into sentences/lines for simple bullets
+                    const bullets = para.split(/\n+|(?<=\.)\s+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                    return (
+                      <div style={{ padding: '1.5rem', background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '10px' }}>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e40af', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          📌 Key Points
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
+                          {bullets.map((b: string, i: number) => (
+                            <li key={i} style={{ marginBottom: '0.75rem' }}>{b}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  // Paragraph mode: reuse existing paragraph rendering logic
+                  typeof summary === 'string' ? (
+                    <div style={{
+                      padding: "1.5rem",
+                      background: "#faf5ff",
+                      border: "1px solid #e9d5ff",
+                      borderRadius: "10px"
+                    }}>
+                      <p style={{
+                        fontSize: "0.95rem",
+                        lineHeight: 1.7,
+                        color: "#374151",
+                        margin: 0,
+                        whiteSpace: "pre-wrap"
+                      }}>
+                        {summary}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {summary.combined && (
+                        <div style={{
+                          padding: "1.5rem",
+                          background: "#faf5ff",
+                          border: "1px solid #e9d5ff",
+                          borderRadius: "10px"
+                        }}>
+                          <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            📝 Main Summary
+                          </div>
+                          <p style={{
+                            fontSize: "0.95rem",
+                            lineHeight: 1.7,
+                            color: "#374151",
+                            margin: 0,
+                            whiteSpace: "pre-wrap"
+                          }}>
+                            {summary.combined}
+                          </p>
+                        </div>
+                      )}
+                      {summary.extractive && (
+                        (() => {
+                          const extractiveData = typeof summary.extractive === 'string' 
+                            ? { text: summary.extractive, excerpts: [] }
+                            : summary.extractive;
+                          const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
+                          const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
+                          if (!shouldShow) return null;
+                          return (
+                            <div style={{
+                              padding: "1.5rem",
+                              background: "#eff6ff",
+                              border: "1px solid #dbeafe",
+                              borderRadius: "10px"
+                            }}>
+                              <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                📋 Key Excerpts
+                              </div>
+                              {hasExcerpts ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                                  {extractiveData.excerpts && extractiveData.excerpts.map((excerpt: any, idx: number) => (
+                                    <div 
+                                      key={idx}
+                                      style={{
+                                        padding: "1rem",
+                                        background: "white",
+                                        borderLeft: "3px solid #3b82f6",
+                                        borderRadius: "6px",
+                                        position: "relative"
+                                      }}
+                                    >
+                                      <div style={{
+                                        fontSize: "0.95rem",
+                                        lineHeight: 1.7,
+                                        color: "#374151",
+                                        fontStyle: "italic",
+                                        marginBottom: "0.5rem"
+                                      }}>
+                                        "{excerpt.text}"
+                                      </div>
+                                      {excerpt.timestamp !== null && excerpt.timestamp !== undefined && (
+                                        <div 
+                                          onClick={() => videoUrl && seekToTime(excerpt.timestamp)}
+                                          style={{
+                                            fontSize: "0.75rem",
+                                            color: videoUrl ? "#3b82f6" : "#9ca3af",
+                                            fontFamily: "monospace",
+                                            fontWeight: 500,
+                                            cursor: videoUrl ? "pointer" : "default",
+                                            textDecoration: videoUrl ? "underline" : "none",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "0.25rem"
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (videoUrl) e.currentTarget.style.color = "#2563eb";
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                                          }}
+                                        >
+                                          🕐 {formatTime(excerpt.timestamp)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p style={{
+                                  fontSize: "0.95rem",
+                                  lineHeight: 1.7,
+                                  color: "#374151",
+                                  margin: 0,
+                                  whiteSpace: "pre-wrap"
+                                }}>
+                                  {extractiveData.text}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()
+                      )}
+                    </>
+                  )
                 )}
               </div>
             ) : (
@@ -659,40 +765,140 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
               <BarChart3 style={{ width: "1.25rem", height: "1.25rem", color: "#ec4899" }} />
               Sentiment Analysis
             </h3>
-            {sentiments && sentiments.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {sentiments.map((s, i) => (
-                  <div key={i} style={{
-                    padding: "1.25rem",
-                    background: "#fdf2f8",
-                    border: "1px solid #fbcfe8",
-                    borderRadius: "10px"
+            {sentiment ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                {/* Overall Sentiment */}
+                {sentiment.overall && (
+                  <div style={{
+                    padding: "2rem",
+                    background: sentiment.overall.toLowerCase() === "positive" 
+                      ? "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)"
+                      : sentiment.overall.toLowerCase() === "negative"
+                        ? "linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)"
+                        : "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
+                    border: `2px solid ${
+                      sentiment.overall.toLowerCase() === "positive" 
+                        ? "#86efac"
+                        : sentiment.overall.toLowerCase() === "negative"
+                          ? "#fca5a5"
+                          : "#d1d5db"
+                    }`,
+                    borderRadius: "12px",
+                    textAlign: "center"
                   }}>
-                    <div style={{ display: "flex", alignItems: "start", gap: "0.75rem" }}>
-                      <div style={{
-                        padding: "0.5rem 0.75rem",
-                        background: "#ec4899",
-                        borderRadius: "6px",
-                        fontSize: "0.875rem",
-                        fontWeight: 600,
-                        color: "white",
-                        flexShrink: 0
-                      }}>
-                        {s.sentiment}
+                    <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.75rem" }}>
+                      Overall Meeting Sentiment
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "1rem", marginBottom: "0.5rem" }}>
+                      <div style={{ fontSize: "3rem" }}>
+                        {sentiment.overall.toLowerCase() === "positive" ? "😊" : 
+                         sentiment.overall.toLowerCase() === "negative" ? "😞" : "😐"}
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: "0.95rem", color: "#831843", marginBottom: "0.5rem" }}>
-                          {s.text}
+                      <div>
+                        <div style={{ 
+                          fontSize: "2rem", 
+                          fontWeight: 700, 
+                          color: sentiment.overall.toLowerCase() === "positive" 
+                            ? "#065f46"
+                            : sentiment.overall.toLowerCase() === "negative"
+                              ? "#991b1b"
+                              : "#374151"
+                        }}>
+                          {sentiment.overall}
                         </div>
-                        {(s.start !== undefined || s.end !== undefined) && (
-                          <div style={{ fontSize: "0.75rem", color: "#9f1239", fontWeight: 500 }}>
-                            ⏱️ {s.start ?? "?"}s - {s.end ?? "?"}s
+                        {sentiment.score !== undefined && (
+                          <div style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: 500 }}>
+                            Confidence: {(sentiment.score * 100).toFixed(0)}%
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
+
+                {/* Segment-level Sentiments */}
+                {sentiment.segments && sentiment.segments.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Segment Analysis ({sentiment.segments.length} segments)
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      {sentiment.segments.map((s, i) => {
+                        const isPositive = s.sentiment.toLowerCase().includes("positive");
+                        const isNegative = s.sentiment.toLowerCase().includes("negative");
+                        const bgColor = isPositive ? "#f0fdf4" : isNegative ? "#fef2f2" : "#f9fafb";
+                        const borderColor = isPositive ? "#bbf7d0" : isNegative ? "#fecaca" : "#e5e7eb";
+                        const textColor = isPositive ? "#065f46" : isNegative ? "#991b1b" : "#374151";
+                        const badgeBg = isPositive ? "#10b981" : isNegative ? "#ef4444" : "#6b7280";
+                        const emoji = isPositive ? "😊" : isNegative ? "😞" : "😐";
+
+                        return (
+                          <div key={i} style={{
+                            padding: "1.25rem",
+                            background: bgColor,
+                            border: `1px solid ${borderColor}`,
+                            borderRadius: "10px",
+                            transition: "all 0.2s ease"
+                          }}>
+                            <div style={{ display: "flex", alignItems: "start", gap: "0.75rem" }}>
+                              <div style={{
+                                padding: "0.5rem 0.75rem",
+                                background: badgeBg,
+                                borderRadius: "6px",
+                                fontSize: "0.875rem",
+                                fontWeight: 600,
+                                color: "white",
+                                flexShrink: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.375rem"
+                              }}>
+                                <span>{emoji}</span>
+                                {s.sentiment}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: "0.95rem", color: textColor, marginBottom: "0.5rem", lineHeight: 1.6 }}>
+                                  "{s.text}"
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                                  {(s.start !== undefined && s.end !== undefined) && (
+                                    <div 
+                                      onClick={() => videoUrl && seekToTime(s.start!)}
+                                      style={{ 
+                                        fontSize: "0.75rem", 
+                                        color: videoUrl ? "#3b82f6" : "#9ca3af", 
+                                        fontWeight: 500,
+                                        fontFamily: "monospace",
+                                        cursor: videoUrl ? "pointer" : "default",
+                                        textDecoration: videoUrl ? "underline" : "none",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "0.25rem"
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (videoUrl) e.currentTarget.style.color = "#2563eb";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                                      }}
+                                    >
+                                      🕐 {formatTime(s.start)} - {formatTime(s.end)}
+                                    </div>
+                                  )}
+                                  {s.score !== undefined && (
+                                    <div style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: 500 }}>
+                                      Confidence: {(s.score * 100).toFixed(0)}%
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{

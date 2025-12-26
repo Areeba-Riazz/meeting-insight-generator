@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Menu, X, Clock } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Menu, X, Clock, Search } from "lucide-react";
 import { listMeetings, type Meeting } from "../api/client";
 
 export function Header() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
@@ -111,30 +112,64 @@ export function Header() {
             </div>
           </div>
 
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{
-              padding: "0.5rem",
-              background: "transparent",
-              border: "1px solid #e5e7eb",
-              borderRadius: "6px",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.2s ease"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "#f9fafb";
-              e.currentTarget.style.borderColor = "#d1d5db";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.borderColor = "#e5e7eb";
-            }}
-          >
-            <Menu style={{ width: "1.25rem", height: "1.25rem", color: "#374151" }} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <button
+              onClick={() => navigate("/search")}
+              style={{
+                padding: "0.5rem 1rem",
+                background: location.pathname === "/search" ? "#eff6ff" : "transparent",
+                color: location.pathname === "/search" ? "#3b82f6" : "#374151",
+                border: `1px solid ${location.pathname === "/search" ? "#3b82f6" : "#e5e7eb"}`,
+                borderRadius: "6px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                if (location.pathname !== "/search") {
+                  e.currentTarget.style.background = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#d1d5db";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (location.pathname !== "/search") {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
+                }
+              }}
+            >
+              <Search style={{ width: "1rem", height: "1rem" }} />
+              Search
+            </button>
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={{
+                padding: "0.5rem",
+                background: "transparent",
+                border: "1px solid #e5e7eb",
+                borderRadius: "6px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f9fafb";
+                e.currentTarget.style.borderColor = "#d1d5db";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "#e5e7eb";
+              }}
+            >
+              <Menu style={{ width: "1.25rem", height: "1.25rem", color: "#374151" }} />
+            </button>
+          </div>
         </div>
       </header>
 

@@ -26,6 +26,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.append(str(SRC_DIR))
 
 from src.api.routes import api_router  # noqa: E402
+from src.utils.error_handlers import suppress_asyncio_socket_shutdown_errors  # noqa: E402
 
 # Hard-coded CORS origins for simplicity (frontend localhost)
 DEFAULT_CORS_ORIGINS = [
@@ -55,6 +56,14 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 app = FastAPI(title="Meeting Insight Generator API", debug=settings.debug)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Configure error handling on startup."""
+    suppress_asyncio_socket_shutdown_errors()
+    print("[Startup] Socket shutdown error suppression enabled")
+
 
 # CORS configuration (fixed list)
 app.add_middleware(

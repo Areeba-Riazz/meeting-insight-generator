@@ -20,7 +20,7 @@
 ### Core Framework & Libraries
 
 #### 1. **Agent Framework: LangChain**
-- **Version**: `langchain>=0.1.0,<0.3.0`
+- **Version**: `langchain>=0.3.0` (Note: 0.3+ required for numpy 2.x compatibility)
 - **Purpose**: Orchestrates multi-agent workflows, manages LLM interactions
 - **Key Components**:
   - `langchain.agents`: Agent creation and execution
@@ -361,7 +361,7 @@ Each agent is a LangChain agent with specific tools and prompts:
 - [x] Implement audio preprocessing (normalize/resample via pydub)
 - [x] Add speaker diarization hook (pyannote, optional token)
 - [x] Create transcript storage logic (filesystem store; DB deferred)
-- [ ] Support and test video inputs (mp4/mkv/mov via ffmpeg audio extraction)
+- [x] Support and test video inputs (mp4/mkv/mov via ffmpeg audio extraction)
 - [x] Test with sample audio files (script: backend/scripts/transcribe_sample.py)
 
 #### 2.2 Agent Framework Setup
@@ -579,18 +579,6 @@ open http://localhost:8000/docs
 3. **Type Checking**: Use `mypy` for static type checking
 4. **Imports**: Use absolute imports, organize with `isort`
 
-### Git Workflow
-
-1. **Branches**:
-   - `main`: Production-ready code
-   - `develop`: Integration branch
-   - `feature/*`: Feature branches
-   - `fix/*`: Bug fix branches
-
-2. **Commits**: Use conventional commits (feat:, fix:, docs:, etc.)
-
-3. **Code Quality Tools**: Use black, flake8, and mypy for formatting, linting, and type checking
-
 ---
 
 ## Testing Strategy
@@ -609,22 +597,6 @@ tests/
 - **Unit Tests**: >90% coverage for agents and services
 - **Integration Tests**: All API endpoints and critical workflows
 - **End-to-End Tests**: Complete pipeline from upload to insights
-
-### Running Tests
-
-```bash
-# All tests
-pytest
-
-# With coverage
-pytest --cov=src --cov-report=html
-
-# Specific test file
-pytest tests/unit/test_agents/test_topic_agent.py
-
-# Integration tests only
-pytest tests/integration/
-```
 
 ---
 
