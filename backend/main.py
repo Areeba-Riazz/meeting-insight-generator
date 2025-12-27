@@ -13,9 +13,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import uvicorn
 
@@ -60,19 +62,49 @@ app = FastAPI(title="Meeting Insight Generator API", debug=settings.debug)
 
 @app.on_event("startup")
 async def startup_event():
-    """Configure error handling on startup."""
+    """Configure error handling and database on startup."""
     suppress_asyncio_socket_shutdown_errors()
     print("[Startup] Socket shutdown error suppression enabled")
+    
+    # Automatically create database tables if they don't exist
+    try:
+        from src.core.database import ensure_tables_exist
+        await ensure_tables_exist()
+    except Exception as e:
+        print(f"[Startup] Warning: Database initialization skipped: {e}")
+        print("[Startup] App will continue to run (filesystem mode still available)")
 
 
 # CORS configuration (fixed list)
+# IMPORTANT: CORS middleware must be added BEFORE routers
+# This ensures all responses (including errors) have CORS headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=DEFAULT_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
+
+# Exception handlers to ensure CORS headers are always added
+# Note: FastAPI's CORSMiddleware should handle this, but these ensure headers
+# are present even if middleware fails
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Validation exception handler with CORS headers."""
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and origin in DEFAULT_CORS_ORIGINS:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()},
+        headers=headers,
+    )
 
 # Routers
 app.include_router(api_router)

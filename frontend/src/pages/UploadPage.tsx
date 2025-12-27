@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { uploadMeeting, getStatus } from "../api/client";
 import { UploadForm } from "../components/UploadForm";
 import { Header } from "../components/Header";
 import { ToastContainer } from "../components/Toast";
+import { FloatingChat } from "../components/FloatingChat";
 import { useToast } from "../hooks/useToast";
-import { CheckCircle2, Loader2, AlertCircle, ArrowRight, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Loader2, AlertCircle, ArrowRight, RotateCcw, ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
 
 type Status =
   | "idle"
@@ -58,6 +59,7 @@ const helperForStatus = (status: Status) => {
 
 export default function UploadPage() {
   const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId?: string }>();
   const { toasts, showError, dismissToast } = useToast();
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -77,8 +79,8 @@ export default function UploadPage() {
     setIsRequestInProgress(true);
     
     try {
-      console.log("[UploadPage] Calling uploadMeeting API...");
-      const resp = await uploadMeeting(file);
+      console.log("[UploadPage] Calling uploadMeeting API...", projectId ? `with projectId: ${projectId}` : "");
+      const resp = await uploadMeeting(file, projectId);
       console.log("[UploadPage] Upload response received:", resp);
       
       setMeetingId(resp.meeting_id);
@@ -140,7 +142,12 @@ export default function UploadPage() {
         }
         
         if (resp.status === "completed") {
-          navigate(`/insights/${meetingId}`);
+          // Navigate based on whether we have a projectId
+          if (projectId) {
+            navigate(`/projects/${projectId}`);
+          } else {
+            navigate(`/insights/${meetingId}`);
+          }
         } else if (!shouldStop(resp.status)) {
           setTimeout(poll, 1000);  // Poll every 1 second for real-time updates
         }
@@ -163,7 +170,7 @@ export default function UploadPage() {
     // Start polling immediately
     poll();
     return () => { cancelled = true; };
-  }, [meetingId, navigate]);
+  }, [meetingId, navigate, projectId]);
 
   const isUploading = status === "uploading" || isRequestInProgress;
   const isProcessing = status !== "idle" && status !== "uploading" && !status.startsWith("error") && status !== "completed" && !isRequestInProgress;
@@ -282,47 +289,79 @@ export default function UploadPage() {
 
       {/* Main Content */}
       <div className="content-wrapper" style={{ maxWidth: 800, margin: "0 auto", padding: "3rem 1.5rem" }}>
+        {/* Show back button if accessed from project */}
+        {projectId && (
+          <button
+            onClick={() => navigate(`/projects/${projectId}`)}
+            style={{
+              padding: "0.5rem",
+              background: "white",
+              border: "1px solid #e5e7eb",
+              borderRadius: "8px",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginBottom: "1.5rem",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#f9fafb";
+              e.currentTarget.style.borderColor = "#d1d5db";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "white";
+              e.currentTarget.style.borderColor = "#e5e7eb";
+            }}
+          >
+            <ArrowLeft style={{ width: "1rem", height: "1rem", color: "#374151" }} />
+            <span style={{ fontSize: "0.875rem", color: "#374151", fontWeight: 500 }}>Back to Project</span>
+          </button>
+        )}
+
         {!isUploading && !isProcessing && status === "idle" ? (
           <div style={{ animation: "fadeIn 0.4s ease-out" }}>
-            {/* Hero Section */}
-            <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
-              <div style={{ 
-                display: "inline-block", 
-                padding: "0.375rem 0.875rem", 
-                background: "linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)",
-                border: "1px solid #dbeafe",
-                borderRadius: "999px",
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                color: "#3b82f6",
-                marginBottom: "1rem",
-                letterSpacing: "0.05em",
-                textTransform: "uppercase"
-              }}>
-                ✨ AI-Powered Analysis
+            {/* Hero Section - only show if not from project */}
+            {!projectId && (
+              <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+                <div style={{ 
+                  display: "inline-block", 
+                  padding: "0.375rem 0.875rem", 
+                  background: "linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)",
+                  border: "1px solid #dbeafe",
+                  borderRadius: "999px",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "#3b82f6",
+                  marginBottom: "1rem",
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase"
+                }}>
+                  ✨ AI-Powered Analysis
+                </div>
+                <h1 style={{ 
+                  fontSize: "2.25rem", 
+                  fontWeight: 700, 
+                  background: "linear-gradient(135deg, #111827 0%, #4b5563 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                  marginBottom: "0.75rem", 
+                  lineHeight: 1.2 
+                }}>
+                  Transform Meetings into Insights
+                </h1>
+                <p style={{ 
+                  fontSize: "1rem", 
+                  color: "#6b7280", 
+                  maxWidth: 480, 
+                  margin: "0 auto",
+                  lineHeight: 1.6
+                }}>
+                  Upload your recording and let AI extract key insights, action items, and speaker contributions automatically
+                </p>
               </div>
-              <h1 style={{ 
-                fontSize: "2.25rem", 
-                fontWeight: 700, 
-                background: "linear-gradient(135deg, #111827 0%, #4b5563 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                marginBottom: "0.75rem", 
-                lineHeight: 1.2 
-              }}>
-                Transform Meetings into Insights
-              </h1>
-              <p style={{ 
-                fontSize: "1rem", 
-                color: "#6b7280", 
-                maxWidth: 480, 
-                margin: "0 auto",
-                lineHeight: 1.6
-              }}>
-                Upload your recording and let AI extract key insights, action items, and speaker contributions automatically
-              </p>
-            </div>
+            )}
 
             {/* Upload Card */}
             <div style={{
@@ -332,8 +371,19 @@ export default function UploadPage() {
               borderRadius: "20px",
               padding: "2.5rem",
               boxShadow: "0 10px 40px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)",
-              marginBottom: "2rem"
+              marginBottom: projectId ? "0" : "2rem"
             }}>
+              {projectId && (
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <h2 style={{ fontSize: "1.5rem", fontWeight: 600, color: "#111827", marginBottom: "0.5rem" }}>
+                    Upload Meeting
+                  </h2>
+                  <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                    Upload an audio or video file to process and add to this project
+                  </p>
+                </div>
+              )}
+
               <UploadForm onUpload={handleUpload} isUploading={isRequestInProgress} />
 
               {error && (
@@ -353,57 +403,59 @@ export default function UploadPage() {
               )}
             </div>
 
-            {/* Feature Pills */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.625rem", justifyContent: "center" }}>
-              <div style={{
-                padding: "0.5rem 1rem",
-                background: "rgba(239, 246, 255, 0.6)",
-                backdropFilter: "blur(8px)",
-                border: "1px solid rgba(219, 234, 254, 0.8)",
-                borderRadius: "999px",
-                fontSize: "0.8125rem",
-                fontWeight: 500,
-                color: "#1e40af",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.375rem"
-              }}>
-                <span>⚡</span>
-                Fast AI Processing
+            {/* Feature Pills - only show if not from project */}
+            {!projectId && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.625rem", justifyContent: "center" }}>
+                <div style={{
+                  padding: "0.5rem 1rem",
+                  background: "rgba(239, 246, 255, 0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(219, 234, 254, 0.8)",
+                  borderRadius: "999px",
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  color: "#1e40af",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.375rem"
+                }}>
+                  <span>⚡</span>
+                  Fast AI Processing
+                </div>
+                <div style={{
+                  padding: "0.5rem 1rem",
+                  background: "rgba(245, 243, 255, 0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(233, 213, 255, 0.8)",
+                  borderRadius: "999px",
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  color: "#6b21a8",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.375rem"
+                }}>
+                  <span>👥</span>
+                  Speaker Identification
+                </div>
+                <div style={{
+                  padding: "0.5rem 1rem",
+                  background: "rgba(240, 253, 244, 0.6)",
+                  backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(187, 247, 208, 0.8)",
+                  borderRadius: "999px",
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  color: "#15803d",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.375rem"
+                }}>
+                  <span>📊</span>
+                  Actionable Insights
+                </div>
               </div>
-              <div style={{
-                padding: "0.5rem 1rem",
-                background: "rgba(245, 243, 255, 0.6)",
-                backdropFilter: "blur(8px)",
-                border: "1px solid rgba(233, 213, 255, 0.8)",
-                borderRadius: "999px",
-                fontSize: "0.8125rem",
-                fontWeight: 500,
-                color: "#6b21a8",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.375rem"
-              }}>
-                <span>👥</span>
-                Speaker Identification
-              </div>
-              <div style={{
-                padding: "0.5rem 1rem",
-                background: "rgba(240, 253, 244, 0.6)",
-                backdropFilter: "blur(8px)",
-                border: "1px solid rgba(187, 247, 208, 0.8)",
-                borderRadius: "999px",
-                fontSize: "0.8125rem",
-                fontWeight: 500,
-                color: "#15803d",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.375rem"
-              }}>
-                <span>📊</span>
-                Actionable Insights
-              </div>
-            </div>
+            )}
           </div>
         ) : (
           <div style={{ animation: "fadeIn 0.4s ease-out" }}>
@@ -718,7 +770,13 @@ export default function UploadPage() {
 
                   <div style={{ display: "flex", gap: "0.75rem" }}>
                     <button
-                      onClick={() => navigate(`/insights/${meetingId}`)}
+                      onClick={() => {
+                        if (projectId) {
+                          navigate(`/projects/${projectId}`);
+                        } else {
+                          navigate(`/insights/${meetingId}`);
+                        }
+                      }}
                       style={{
                         flex: 1,
                         padding: "0.875rem 1.5rem",
@@ -783,6 +841,7 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+      <FloatingChat context={projectId ? `Uploading meeting to project` : "Uploading a new meeting"} />
     </div>
   );
 }

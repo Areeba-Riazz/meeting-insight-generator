@@ -121,7 +121,7 @@ class AgentOrchestrator:
                             continue
                         else:
                             logger.error(f"[AgentOrchestrator] {agent_name} timeout after {max_retries + 1} attempts")
-                            return {agent.name: "error: operation timed out"}
+                            return {agent.name: f"error: {agent_name} timed out after 60 seconds. The operation took too long. Please try again with a shorter transcript or contact support."}
                     except (ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError, BrokenPipeError) as e:
                         logger.warning(
                             f"[AgentOrchestrator] {agent_name} connection error on attempt {attempt + 1}: {e}"
@@ -132,7 +132,7 @@ class AgentOrchestrator:
                             continue
                         else:
                             logger.error(f"[AgentOrchestrator] {agent_name} connection failed after {max_retries + 1} attempts")
-                            return {agent.name: "error: connection to agent failed"}
+                            return {agent.name: f"error: Unable to connect to {agent_name.lower()} service. Please check your internet connection and API keys, then try again. If the problem persists, contact support."}
                     
                     # Update status after completing agent
                     completed_progress = base_progress + ((index + 1) * progress_per_agent)
@@ -150,11 +150,17 @@ class AgentOrchestrator:
                     return result
                     
                 except Exception as e:
-                    logger.error(f"[AgentOrchestrator] {agent_name} non-recoverable error: {e}")
-                    return {agent.name: f"error: {type(e).__name__}: {str(e)[:100]}"}
+                    error_type = type(e).__name__
+                    error_msg = str(e)[:200]  # More context in error message
+                    logger.error(
+                        f"[AgentOrchestrator] {agent_name} non-recoverable error ({error_type}): {error_msg}"
+                    )
+                    # Return more descriptive error message
+                    user_friendly_msg = f"Failed to process {agent_name.lower()}: {error_msg}"
+                    return {agent.name: f"error: {user_friendly_msg}"}
             
             # Should not reach here
-            return {agent.name: "error: max retries exceeded"}
+            return {agent.name: f"error: {agent_name} failed after {max_retries + 1} attempts. Please try again or contact support if the issue persists."}
 
         # Run agents sequentially to show progress for each one
         for idx, agent in enumerate(self.agents):

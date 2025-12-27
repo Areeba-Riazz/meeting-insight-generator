@@ -46,6 +46,9 @@ export type InsightsPayload = {
 export type InsightsResponse = {
   meeting_id: string;
   insights: InsightsPayload;
+  file_path?: string;
+  legacy_meeting_id?: string;  // For accessing storage files (legacy format)
+  original_filename?: string;
 };
 
 export type SearchResult = {
@@ -85,4 +88,48 @@ export type SearchStats = {
   embedding_dimension?: number | null;
   meetings: Record<string, number>;
   segment_types: Record<string, number>;
+};
+
+// Project types
+export type Project = {
+  id: string;  // UUID
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  meetings_count?: number;
+};
+
+export type ProjectMeeting = {
+  id: string;  // UUID
+  project_id: string;
+  meeting_name: string;
+  original_filename: string;
+  file_size_bytes: number;
+  content_type?: string;
+  status: string;
+  upload_timestamp: string;
+  processing_completed_at?: string;
+  has_insights?: boolean;
+  has_transcript?: boolean;
+};
+
+export type CreateProjectRequest = {
+  name: string;
+  description?: string;
+};
+
+export type UpdateProjectRequest = {
+  name?: string;
+  description?: string;
+};
+
+export type ProjectListResponse = {
+  projects: Project[];
+  total: number;
+};
+
+export type ProjectMeetingsResponse = {
+  meetings: ProjectMeeting[];
+  total: number;
 };
