@@ -202,9 +202,10 @@ The frontend will be available at `http://localhost:5173`
 ### Chat
 - `POST /api/v1/chat` - Chat with AI assistant
 
-### Health
+### Health & Monitoring
 - `GET /health` - Health check
 - `GET /` - API info
+- `GET /metrics` - Prometheus metrics endpoint (optional, requires prometheus-client)
 
 ## 🎯 Usage
 

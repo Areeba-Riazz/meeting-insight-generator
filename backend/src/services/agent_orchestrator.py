@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -9,6 +10,32 @@ from typing import Any, Callable, Dict, List, Optional
 from src.agents.base_agent import BaseAgent
 from src.services.transcription_service import TranscriptionResult, TranscriptionService
 from src.utils.error_handlers import handle_connection_errors
+
+# Import metrics (gracefully handles if not available)
+try:
+    from src.utils.metrics import (
+        agent_executions_total,
+        agent_execution_duration_seconds,
+        meeting_processing_total,
+        meeting_processing_duration_seconds,
+        PROMETHEUS_AVAILABLE,
+    )
+    METRICS_AVAILABLE = PROMETHEUS_AVAILABLE
+except (ImportError, AttributeError):
+    METRICS_AVAILABLE = False
+    # Create dummy metrics that do nothing
+    class DummyMetric:
+        def labels(self, **kwargs):
+            return self
+        def inc(self, value=1):
+            pass
+        def observe(self, value):
+            pass
+    
+    agent_executions_total = DummyMetric()
+    agent_execution_duration_seconds = DummyMetric()
+    meeting_processing_total = DummyMetric()
+    meeting_processing_duration_seconds = DummyMetric()
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +86,28 @@ class AgentOrchestrator:
         Returns:
             Dictionary with transcript and agent results
         """
+        import time
+        processing_start_time = time.time()
+        
         # Transcribe (handled by transcription_service with its own progress)
         try:
+            transcription_start = time.time()
             transcript: TranscriptionResult = self.transcription_service.transcribe(
                 audio_path, 
                 meeting_id=meeting_id,
                 on_status=on_status
             )
+            transcription_duration = time.time() - transcription_start
+            
+            # Record transcription metrics
+            if METRICS_AVAILABLE:
+                meeting_processing_duration_seconds.labels(
+                    stage='transcription'
+                ).observe(transcription_duration)
         except Exception as e:
             logger.error(f"[AgentOrchestrator] Transcription failed: {e}")
+            if METRICS_AVAILABLE:
+                meeting_processing_total.labels(status='error').inc()
             raise
 
         payload: Dict[str, Any] = {
@@ -107,14 +147,33 @@ class AgentOrchestrator:
                             f"(attempt {attempt + 1}/{max_retries + 1}, progress: {agent_progress:.1f}%)"
                         )
                     
-                    # Run agent with timeout (60 seconds per agent)
+                    # Run agent with timeout (60 seconds per agent) and metrics tracking
                     try:
+                        # Track agent execution time
+                        agent_start_time = time.time()
                         result = await asyncio.wait_for(
                             agent.run(payload),
                             timeout=60
                         )
+                        agent_duration = time.time() - agent_start_time
+                        
+                        # Record successful execution
+                        if METRICS_AVAILABLE:
+                            agent_execution_duration_seconds.labels(
+                                agent_name=agent.name
+                            ).observe(agent_duration)
+                            agent_executions_total.labels(
+                                agent_name=agent.name,
+                                status='success'
+                            ).inc()
                     except asyncio.TimeoutError:
                         logger.warning(f"[AgentOrchestrator] {agent_name} timed out (60s)")
+                        # Record timeout error
+                        if METRICS_AVAILABLE:
+                            agent_executions_total.labels(
+                                agent_name=agent.name,
+                                status='error'
+                            ).inc()
                         if attempt < max_retries:
                             await asyncio.sleep(delay)
                             delay *= 2  # Exponential backoff
@@ -126,6 +185,12 @@ class AgentOrchestrator:
                         logger.warning(
                             f"[AgentOrchestrator] {agent_name} connection error on attempt {attempt + 1}: {e}"
                         )
+                        # Record connection error
+                        if METRICS_AVAILABLE:
+                            agent_executions_total.labels(
+                                agent_name=agent.name,
+                                status='error'
+                            ).inc()
                         if attempt < max_retries:
                             await asyncio.sleep(delay)
                             delay *= 2  # Exponential backoff
@@ -155,6 +220,12 @@ class AgentOrchestrator:
                     logger.error(
                         f"[AgentOrchestrator] {agent_name} non-recoverable error ({error_type}): {error_msg}"
                     )
+                    # Record error in metrics
+                    if METRICS_AVAILABLE:
+                        agent_executions_total.labels(
+                            agent_name=agent.name,
+                            status='error'
+                        ).inc()
                     # Return more descriptive error message
                     user_friendly_msg = f"Failed to process {agent_name.lower()}: {error_msg}"
                     return {agent.name: f"error: {user_friendly_msg}"}
@@ -163,8 +234,25 @@ class AgentOrchestrator:
             return {agent.name: f"error: {agent_name} failed after {max_retries + 1} attempts. Please try again or contact support if the issue persists."}
 
         # Run agents sequentially to show progress for each one
+        agents_start_time = time.time()
         for idx, agent in enumerate(self.agents):
             agent_result = await run_agent_with_retry(agent, idx)
             results.update(agent_result)
+        
+        agents_duration = time.time() - agents_start_time
+        
+        # Record agent processing metrics
+        if METRICS_AVAILABLE:
+            meeting_processing_duration_seconds.labels(
+                stage='agents'
+            ).observe(agents_duration)
+        
+        # Record total processing time and success
+        total_duration = time.time() - processing_start_time
+        if METRICS_AVAILABLE:
+            meeting_processing_duration_seconds.labels(
+                stage='total'
+            ).observe(total_duration)
+            meeting_processing_total.labels(status='success').inc()
 
         return results
