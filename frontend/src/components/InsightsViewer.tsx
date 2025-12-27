@@ -381,12 +381,12 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
             {summary ? (
               (() => {
                 // Parse summary if it's a JSON string
-                let parsedSummary = summary;
+                let summaryData = summary;
                 if (typeof summary === 'string') {
                   try {
                     const parsed = JSON.parse(summary);
                     if (parsed && typeof parsed === 'object') {
-                      parsedSummary = parsed;
+                      summaryData = parsed;
                     }
                   } catch (e) {
                     // Not JSON, keep as string
@@ -398,30 +398,26 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                 {summaryMode === 'bullets' ? (
                   // BULLET POINTS MODE - Show AI-generated comprehensive bullets
                   (() => {
-                    // Get abstractive bullets (AI-generated summary in bullet format)
-                    const abstractiveBullets = 
-                      summary && 
-                      typeof summary !== 'string' && 
-                      summary.abstractive && 
-                      Array.isArray(summary.abstractive.bullets)
-                        ? summary.abstractive.bullets
-                        : null;
-
-                    if (abstractiveBullets && abstractiveBullets.length > 0) {
+                    if (typeof summaryData === 'string') {
+                      // If string, create bullets from it
+                      const bullets = summaryData
+                        .split(/\n+|(?<=\.)\s+/)
+                        .map((s: string) => s.trim())
+                        .filter((s: string) => s.length > 0);
                       return (
-                        <div style={{
-                          padding: "1.5rem",
-                          background: "#eff6ff",
-                          border: "1px solid #dbeafe",
-                          borderRadius: "10px"
+                        <div style={{ 
+                          padding: '1.5rem', 
+                          background: '#eff6ff', 
+                          border: '1px solid #dbeafe', 
+                          borderRadius: '10px' 
                         }}>
                           <div style={{ 
-                            fontSize: "0.875rem", 
+                            fontSize: '0.875rem', 
                             fontWeight: 600, 
-                            color: "#1e40af", 
-                            marginBottom: "1rem", 
-                            textTransform: "uppercase", 
-                            letterSpacing: "0.05em" 
+                            color: '#1e40af', 
+                            marginBottom: '1rem', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.05em' 
                           }}>
                             📌 Key Points
                           </div>
@@ -431,85 +427,104 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                             color: '#374151', 
                             lineHeight: 1.7 
                           }}>
-                            {abstractiveBullets.map((bullet: string, i: number) => (
+                            {bullets.map((b: string, i: number) => (
                               <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-                                {parseMarkdown(bullet)}
+                                {b}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    } else {
+                      // Object case
+                      const obj = summaryData as { abstractive?: any; combined?: string };
+                      // Get abstractive bullets (AI-generated summary in bullet format)
+                      const abstractiveBullets = (obj.abstractive && typeof obj.abstractive === 'object' && obj.abstractive !== null && 'bullets' in obj.abstractive && Array.isArray(obj.abstractive.bullets)) ? obj.abstractive.bullets : null;
+
+                      if (abstractiveBullets && abstractiveBullets.length > 0) {
+                        return (
+                          <div style={{
+                            padding: "1.5rem",
+                            background: "#eff6ff",
+                            border: "1px solid #dbeafe",
+                            borderRadius: "10px"
+                          }}>
+                            <div style={{ 
+                              fontSize: "0.875rem", 
+                              fontWeight: 600, 
+                              color: "#1e40af", 
+                              marginBottom: "1rem", 
+                              textTransform: "uppercase", 
+                              letterSpacing: "0.05em" 
+                            }}>
+                              📌 Key Points
+                            </div>
+                            <ul style={{ 
+                              margin: 0, 
+                              paddingLeft: '1.25rem', 
+                              color: '#374151', 
+                              lineHeight: 1.7 
+                            }}>
+                              {abstractiveBullets.map((bullet: string, i: number) => (
+                                <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                                  {parseMarkdown(bullet)}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      }
+
+                      // Fallback: try to create bullets from combined/abstractive text
+                      const para = obj.combined || (typeof obj.abstractive === 'string' ? obj.abstractive : obj.abstractive?.paragraph) || '';
+                      if (!para) return (
+                        <div style={{ padding: '1.5rem', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: '10px', color: '#9ca3af' }}>
+                          No bullet points available
+                        </div>
+                      );
+
+                      // Split into sentences for simple bullets
+                      const bullets = para
+                        .split(/\n+|(?<=\.)\s+/)
+                        .map((s: string) => s.trim())
+                        .filter((s: string) => s.length > 0);
+                      
+                      return (
+                        <div style={{ 
+                          padding: '1.5rem', 
+                          background: '#eff6ff', 
+                          border: '1px solid #dbeafe', 
+                          borderRadius: '10px' 
+                        }}>
+                          <div style={{ 
+                            fontSize: '0.875rem', 
+                            fontWeight: 600, 
+                            color: '#1e40af', 
+                            marginBottom: '1rem', 
+                            textTransform: 'uppercase', 
+                            letterSpacing: '0.05em' 
+                          }}>
+                            📌 Key Points
+                          </div>
+                          <ul style={{ 
+                            margin: 0, 
+                            paddingLeft: '1.25rem', 
+                            color: '#374151', 
+                            lineHeight: 1.7 
+                          }}>
+                            {bullets.map((b: string, i: number) => (
+                              <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                                {b}
                               </li>
                             ))}
                           </ul>
                         </div>
                       );
                     }
-
-                    // Check for abstractive.bullets first
-                    const abstractiveBullets = parsedSummary && typeof parsedSummary !== 'string' && parsedSummary.abstractive && typeof parsedSummary.abstractive === 'object' && Array.isArray(parsedSummary.abstractive.bullets)
-                      ? parsedSummary.abstractive.bullets
-                      : null;
-
-                    if (abstractiveBullets && abstractiveBullets.length > 0) {
-                      return (
-                        <div style={{ padding: '1.5rem', background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '10px' }}>
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e40af', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            📌 Key Points
-                          </div>
-                          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
-                            {abstractiveBullets.map((b: string, i: number) => (
-                              <li key={i} style={{ marginBottom: '0.75rem' }} dangerouslySetInnerHTML={{ __html: b }} />
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    }
-
-                    // Fallback: try to create bullets from combined/abstractive text
-                    const para = typeof summary === 'string' ? summary : (summary.combined || summary.abstractive || '');
-                    if (!para) return (
-                      <div style={{ padding: '1.5rem', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: '10px', color: '#9ca3af' }}>
-                        No bullet points available
-                      </div>
-                    );
-
-                    // Split into sentences for simple bullets
-                    const bullets = para
-                      .split(/\n+|(?<=\.)\s+/)
-                      .map((s: string) => s.trim())
-                      .filter((s: string) => s.length > 0);
-                    
-                    return (
-                      <div style={{ 
-                        padding: '1.5rem', 
-                        background: '#eff6ff', 
-                        border: '1px solid #dbeafe', 
-                        borderRadius: '10px' 
-                      }}>
-                        <div style={{ 
-                          fontSize: '0.875rem', 
-                          fontWeight: 600, 
-                          color: '#1e40af', 
-                          marginBottom: '1rem', 
-                          textTransform: 'uppercase', 
-                          letterSpacing: '0.05em' 
-                        }}>
-                          📌 Key Points
-                        </div>
-                        <ul style={{ 
-                          margin: 0, 
-                          paddingLeft: '1.25rem', 
-                          color: '#374151', 
-                          lineHeight: 1.7 
-                        }}>
-                          {bullets.map((b: string, i: number) => (
-                            <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-                              {b}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
                   })()
                 ) : (
                   // Paragraph mode: reuse existing paragraph rendering logic
-                  typeof summary === 'string' ? (
+                  typeof summaryData === 'string' ? (
                     <div style={{
                       padding: "1.5rem",
                       background: "#faf5ff",
@@ -523,160 +538,165 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                         margin: 0,
                         whiteSpace: "pre-wrap"
                       }}>
-                        {parsedSummary}
+                        {summaryData}
                       </p>
                     </div>
                   ) : (
-                    <>
-                      {/* Show combined summary if available */}
-                      {parsedSummary.combined && (
-                        <div style={{
-                          padding: "1.5rem",
-                          background: "#faf5ff",
-                          border: "1px solid #e9d5ff",
-                          borderRadius: "10px"
-                        }}>
-                          <div style={{ 
-                            fontSize: "0.875rem", 
-                            fontWeight: 600, 
-                            color: "#7c3aed", 
-                            marginBottom: "0.75rem", 
-                            textTransform: "uppercase", 
-                            letterSpacing: "0.05em" 
-                          }}>
-                            📝 Main Summary
-                          </div>
-                          <div style={{
-                            fontSize: "0.95rem",
-                            lineHeight: 1.7,
-                            color: "#374151",
-                            whiteSpace: "pre-wrap"
-                          }}>
-                            {summary.combined}
-                          </p>
-                        </div>
-                      )}
-                      {/* Show abstractive paragraph if no combined but abstractive exists */}
-                      {!parsedSummary.combined && parsedSummary.abstractive && (
-                        (() => {
-                          const abstractiveText = typeof parsedSummary.abstractive === 'string' 
-                            ? parsedSummary.abstractive 
-                            : parsedSummary.abstractive.paragraph;
-                          if (!abstractiveText) return null;
-                          return (
+                    (() => {
+                      const obj = summaryData as { combined?: string; abstractive?: any; extractive?: any };
+                      return (
+                        <>
+                          {/* Show combined summary if available */}
+                          {obj.combined && (
                             <div style={{
                               padding: "1.5rem",
                               background: "#faf5ff",
                               border: "1px solid #e9d5ff",
                               borderRadius: "10px"
                             }}>
-                              <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                📝 Main Summary
-                              </div>
-                              <p style={{
-                                fontSize: "0.95rem",
-                                lineHeight: 1.7,
-                                color: "#374151",
-                                margin: 0,
-                                whiteSpace: "pre-wrap"
-                              }}>
-                                {abstractiveText}
-                              </p>
-                            </div>
-                          );
-                        })()
-                      )}
-                      {parsedSummary.extractive && (
-                        (() => {
-                          const extractiveData = typeof parsedSummary.extractive === 'string' 
-                            ? { text: parsedSummary.extractive, excerpts: [] }
-                            : parsedSummary.extractive;
-                          const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
-                          const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
-                          if (!shouldShow) return null;
-                          
-                          return (
-                            <div style={{
-                              padding: "1.5rem",
-                              background: "#eff6ff",
-                              border: "1px solid #dbeafe",
-                              borderRadius: "10px"
-                            }}>
                               <div style={{ 
                                 fontSize: "0.875rem", 
                                 fontWeight: 600, 
-                                color: "#1e40af", 
-                                marginBottom: "1rem", 
+                                color: "#7c3aed", 
+                                marginBottom: "0.75rem", 
                                 textTransform: "uppercase", 
                                 letterSpacing: "0.05em" 
                               }}>
-                                📋 Key Excerpts
+                                📝 Main Summary
                               </div>
-                              {hasExcerpts ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                                  {extractiveData.excerpts && extractiveData.excerpts.map((excerpt: any, idx: number) => (
-                                    <div 
-                                      key={idx}
-                                      style={{
-                                        padding: "1rem",
-                                        background: "white",
-                                        borderLeft: "3px solid #3b82f6",
-                                        borderRadius: "6px",
-                                        position: "relative"
-                                      }}
-                                    >
-                                      <div style={{
-                                        fontSize: "0.95rem",
-                                        lineHeight: 1.7,
-                                        color: "#374151",
-                                        fontStyle: "italic",
-                                        marginBottom: "0.5rem"
-                                      }}>
-                                        "{excerpt.text}"
-                                      </div>
-                                      {excerpt.timestamp !== null && excerpt.timestamp !== undefined && (
+                              <div style={{
+                                fontSize: "0.95rem",
+                                lineHeight: 1.7,
+                                color: "#374151",
+                                whiteSpace: "pre-wrap"
+                              }}>
+                                {obj.combined}
+                              </div>
+                            </div>
+                          )}
+                          {/* Show abstractive paragraph if no combined but abstractive exists */}
+                          {!obj.combined && obj.abstractive && (
+                            (() => {
+                              const abstractiveText = typeof obj.abstractive === 'string' 
+                                ? obj.abstractive 
+                                : obj.abstractive.paragraph;
+                              if (!abstractiveText) return null;
+                              return (
+                                <div style={{
+                                  padding: "1.5rem",
+                                  background: "#faf5ff",
+                                  border: "1px solid #e9d5ff",
+                                  borderRadius: "10px"
+                                }}>
+                                  <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    📝 Main Summary
+                                  </div>
+                                  <p style={{
+                                    fontSize: "0.95rem",
+                                    lineHeight: 1.7,
+                                    color: "#374151",
+                                    margin: 0,
+                                    whiteSpace: "pre-wrap"
+                                  }}>
+                                    {abstractiveText}
+                                  </p>
+                                </div>
+                              );
+                            })()
+                          )}
+                          {obj.extractive && (
+                            (() => {
+                              const extractiveData = typeof obj.extractive === 'string' 
+                                ? { text: obj.extractive, excerpts: [] }
+                                : obj.extractive;
+                              const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
+                              const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== obj.combined);
+                              if (!shouldShow) return null;
+                              
+                              return (
+                                <div style={{
+                                  padding: "1.5rem",
+                                  background: "#eff6ff",
+                                  border: "1px solid #dbeafe",
+                                  borderRadius: "10px"
+                                }}>
+                                  <div style={{ 
+                                    fontSize: "0.875rem", 
+                                    fontWeight: 600, 
+                                    color: "#1e40af", 
+                                    marginBottom: "1rem", 
+                                    textTransform: "uppercase", 
+                                    letterSpacing: "0.05em" 
+                                  }}>
+                                    📋 Key Excerpts
+                                  </div>
+                                  {hasExcerpts ? (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                                      {extractiveData.excerpts && extractiveData.excerpts.map((excerpt: any, idx: number) => (
                                         <div 
-                                          onClick={() => videoUrl && seekToTime(excerpt.timestamp)}
+                                          key={idx}
                                           style={{
-                                            fontSize: "0.75rem",
-                                            color: videoUrl ? "#3b82f6" : "#9ca3af",
-                                            fontFamily: "monospace",
-                                            fontWeight: 500,
-                                            cursor: videoUrl ? "pointer" : "default",
-                                            textDecoration: videoUrl ? "underline" : "none",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "0.25rem"
-                                          }}
-                                          onMouseEnter={(e) => {
-                                            if (videoUrl) e.currentTarget.style.color = "#2563eb";
-                                          }}
-                                          onMouseLeave={(e) => {
-                                            if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                                            padding: "1rem",
+                                            background: "white",
+                                            borderLeft: "3px solid #3b82f6",
+                                            borderRadius: "6px",
+                                            position: "relative"
                                           }}
                                         >
-                                          🕐 {formatTime(excerpt.timestamp)}
+                                          <div style={{
+                                            fontSize: "0.95rem",
+                                            lineHeight: 1.7,
+                                            color: "#374151",
+                                            fontStyle: "italic",
+                                            marginBottom: "0.5rem"
+                                          }}>
+                                            "{excerpt.text}"
+                                          </div>
+                                          {excerpt.timestamp !== null && excerpt.timestamp !== undefined && (
+                                            <div 
+                                              onClick={() => videoUrl && seekToTime(excerpt.timestamp)}
+                                              style={{
+                                                fontSize: "0.75rem",
+                                                color: videoUrl ? "#3b82f6" : "#9ca3af",
+                                                fontFamily: "monospace",
+                                                fontWeight: 500,
+                                                cursor: videoUrl ? "pointer" : "default",
+                                                textDecoration: videoUrl ? "underline" : "none",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "0.25rem"
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (videoUrl) e.currentTarget.style.color = "#2563eb";
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (videoUrl) e.currentTarget.style.color = "#3b82f6";
+                                              }}
+                                            >
+                                              🕐 {formatTime(excerpt.timestamp)}
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
+                                      ))}
                                     </div>
-                                  ))}
+                                  ) : (
+                                    <p style={{
+                                      fontSize: "0.95rem",
+                                      lineHeight: 1.7,
+                                      color: "#374151",
+                                      margin: 0,
+                                      whiteSpace: "pre-wrap"
+                                    }}>
+                                      {extractiveData.text}
+                                    </p>
+                                  )}
                                 </div>
-                              ) : (
-                                <p style={{
-                                  fontSize: "0.95rem",
-                                  lineHeight: 1.7,
-                                  color: "#374151",
-                                  margin: 0,
-                                  whiteSpace: "pre-wrap"
-                                }}>
-                                  {extractiveData.text}
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })()
-                      )}
-                    </>
+                              );
+                            })()
+                          )}
+                        </>
+                      );
+                    })()
                   )
                 )}
               </div>
