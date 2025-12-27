@@ -6,11 +6,13 @@ import os
 from typing import Any, Dict, Optional
 
 from src.agents.config import AgentSettings
+from src.utils.cache import cached_llm_call
 from src.utils.error_handlers import handle_connection_errors
 
 logger = logging.getLogger(__name__)
 
 
+@cached_llm_call
 @handle_connection_errors(max_retries=2, timeout=30)
 async def get_mistral_completion(
     prompt: str,

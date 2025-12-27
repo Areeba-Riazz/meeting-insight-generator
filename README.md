@@ -283,5 +283,4 @@ nlp_project/
 ## 📚 Documentation
 
 - See `IMPLEMENTATION_GUIDE.md` for detailed architecture documentation
-- See `Documentation/PROGRESS_SUMMARY.md` for implementation status
 - API documentation available at `/docs` when server is running
