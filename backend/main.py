@@ -29,6 +29,13 @@ if str(SRC_DIR) not in sys.path:
 
 from src.api.routes import api_router  # noqa: E402
 from src.utils.error_handlers import suppress_asyncio_socket_shutdown_errors  # noqa: E402
+from src.utils.metrics import (  # noqa: E402
+    http_requests_total,
+    http_request_duration_seconds,
+    get_metrics_content,
+    get_metrics_content_type,
+    PROMETHEUS_AVAILABLE,
+)
 
 # Hard-coded CORS origins for simplicity (frontend localhost)
 DEFAULT_CORS_ORIGINS = [
@@ -88,6 +95,44 @@ app.add_middleware(
     max_age=3600,
 )
 
+# Metrics middleware - tracks HTTP requests (only if Prometheus is available)
+if PROMETHEUS_AVAILABLE:
+    import time
+    
+    @app.middleware("http")
+    async def metrics_middleware(request: Request, call_next):
+        """Middleware to track HTTP request metrics."""
+        start_time = time.time()
+        
+        # Get endpoint path (simplified, excluding query params)
+        endpoint = request.url.path
+        
+        # Skip metrics endpoint itself to avoid recursion
+        if endpoint == "/metrics":
+            return await call_next(request)
+        
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+        except Exception as e:
+            status_code = 500
+            raise
+        finally:
+            # Record metrics
+            duration = time.time() - start_time
+            http_request_duration_seconds.labels(
+                method=request.method,
+                endpoint=endpoint
+            ).observe(duration)
+            
+            http_requests_total.labels(
+                method=request.method,
+                endpoint=endpoint,
+                status_code=str(status_code)
+            ).inc()
+        
+        return response
+
 # Exception handlers to ensure CORS headers are always added
 # Note: FastAPI's CORSMiddleware should handle this, but these ensure headers
 # are present even if middleware fails
@@ -128,6 +173,15 @@ async def root() -> dict:
 @app.get("/health", tags=["health"])
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/metrics", tags=["monitoring"])
+async def metrics():
+    """Prometheus metrics endpoint."""
+    from fastapi.responses import Response
+    content = get_metrics_content()
+    content_type = get_metrics_content_type()
+    return Response(content=content, media_type=content_type)
 
 
 if __name__ == "__main__":
