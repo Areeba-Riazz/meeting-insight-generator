@@ -72,6 +72,22 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+// Helper function to parse markdown bold text
+const parseMarkdown = (text: string) => {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} style={{ fontWeight: 700, color: "#111827" }}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+};
+
 export function InsightsViewer({ insights, videoUrl }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("transcript");
   const [currentTime, setCurrentTime] = useState(0);
@@ -361,15 +377,19 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
             </div>
             {summary ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {/* If user wants bullets, prefer extractive excerpts, else show paragraph/combined */}
                 {summaryMode === 'bullets' ? (
+                  // BULLET POINTS MODE - Show AI-generated comprehensive bullets
                   (() => {
-                    // Prefer explicit excerpts list when available
-                    const excerpts = summary && typeof summary !== 'string' && summary.extractive && Array.isArray(summary.extractive.excerpts)
-                      ? summary.extractive.excerpts
-                      : null;
+                    // Get abstractive bullets (AI-generated summary in bullet format)
+                    const abstractiveBullets = 
+                      summary && 
+                      typeof summary !== 'string' && 
+                      summary.abstractive && 
+                      Array.isArray(summary.abstractive.bullets)
+                        ? summary.abstractive.bullets
+                        : null;
 
-                    if (excerpts && excerpts.length > 0) {
+                    if (abstractiveBullets && abstractiveBullets.length > 0) {
                       return (
                         <div style={{
                           padding: "1.5rem",
@@ -377,18 +397,25 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                           border: "1px solid #dbeafe",
                           borderRadius: "10px"
                         }}>
-                          <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          <div style={{ 
+                            fontSize: "0.875rem", 
+                            fontWeight: 600, 
+                            color: "#1e40af", 
+                            marginBottom: "1rem", 
+                            textTransform: "uppercase", 
+                            letterSpacing: "0.05em" 
+                          }}>
                             📌 Key Points
                           </div>
-                          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
-                            {excerpts.map((ex: any, i: number) => (
-                              <li key={i} style={{ marginBottom: '0.75rem' }}>
-                                {ex.text}
-                                {ex.timestamp !== null && ex.timestamp !== undefined && videoUrl && (
-                                  <div onClick={() => seekToTime(ex.timestamp)} style={{ fontSize: '0.75rem', color: '#3b82f6', fontFamily: 'monospace', cursor: 'pointer' }}>
-                                    🕐 {formatTime(ex.timestamp)}
-                                  </div>
-                                )}
+                          <ul style={{ 
+                            margin: 0, 
+                            paddingLeft: '1.25rem', 
+                            color: '#374151', 
+                            lineHeight: 1.7 
+                          }}>
+                            {abstractiveBullets.map((bullet: string, i: number) => (
+                              <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                                {parseMarkdown(bullet)}
                               </li>
                             ))}
                           </ul>
@@ -396,31 +423,65 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                       );
                     }
 
-                    // Fallback: try to create bullets from combined/abstractive text
-                    const para = typeof summary === 'string' ? summary : (summary.combined || summary.abstractive || '');
-                    if (!para) return (
-                      <div style={{ padding: '1.5rem', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: '10px', color: '#9ca3af' }}>
-                        No bullet points available
-                      </div>
-                    );
+                    // Fallback: create bullets from paragraph
+                    const para = typeof summary === 'string' 
+                      ? summary 
+                      : (summary.combined || summary.abstractive || '');
+                    
+                    if (!para) {
+                      return (
+                        <div style={{ 
+                          padding: '1.5rem', 
+                          background: '#f9fafb', 
+                          border: '1px dashed #e5e7eb', 
+                          borderRadius: '10px', 
+                          color: '#9ca3af' 
+                        }}>
+                          No bullet points available
+                        </div>
+                      );
+                    }
 
-                    // Split into sentences/lines for simple bullets
-                    const bullets = para.split(/\n+|(?<=\.)\s+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                    // Split into sentences for simple bullets
+                    const bullets = para
+                      .split(/\n+|(?<=\.)\s+/)
+                      .map((s: string) => s.trim())
+                      .filter((s: string) => s.length > 0);
+                    
                     return (
-                      <div style={{ padding: '1.5rem', background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '10px' }}>
-                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e40af', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <div style={{ 
+                        padding: '1.5rem', 
+                        background: '#eff6ff', 
+                        border: '1px solid #dbeafe', 
+                        borderRadius: '10px' 
+                      }}>
+                        <div style={{ 
+                          fontSize: '0.875rem', 
+                          fontWeight: 600, 
+                          color: '#1e40af', 
+                          marginBottom: '1rem', 
+                          textTransform: 'uppercase', 
+                          letterSpacing: '0.05em' 
+                        }}>
                           📌 Key Points
                         </div>
-                        <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
+                        <ul style={{ 
+                          margin: 0, 
+                          paddingLeft: '1.25rem', 
+                          color: '#374151', 
+                          lineHeight: 1.7 
+                        }}>
                           {bullets.map((b: string, i: number) => (
-                            <li key={i} style={{ marginBottom: '0.75rem' }}>{b}</li>
+                            <li key={i} style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+                              {b}
+                            </li>
                           ))}
                         </ul>
                       </div>
                     );
                   })()
                 ) : (
-                  // Paragraph mode: reuse existing paragraph rendering logic
+                  // PARAGRAPH MODE - Show full summary with excerpts
                   typeof summary === 'string' ? (
                     <div style={{
                       padding: "1.5rem",
@@ -447,18 +508,24 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                           border: "1px solid #e9d5ff",
                           borderRadius: "10px"
                         }}>
-                          <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          <div style={{ 
+                            fontSize: "0.875rem", 
+                            fontWeight: 600, 
+                            color: "#7c3aed", 
+                            marginBottom: "0.75rem", 
+                            textTransform: "uppercase", 
+                            letterSpacing: "0.05em" 
+                          }}>
                             📝 Main Summary
                           </div>
-                          <p style={{
+                          <div style={{
                             fontSize: "0.95rem",
                             lineHeight: 1.7,
                             color: "#374151",
-                            margin: 0,
                             whiteSpace: "pre-wrap"
                           }}>
-                            {summary.combined}
-                          </p>
+                            {parseMarkdown(summary.combined)}
+                          </div>
                         </div>
                       )}
                       {summary.extractive && (
@@ -468,7 +535,9 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                             : summary.extractive;
                           const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
                           const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
+                          
                           if (!shouldShow) return null;
+                          
                           return (
                             <div style={{
                               padding: "1.5rem",
@@ -476,7 +545,14 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                               border: "1px solid #dbeafe",
                               borderRadius: "10px"
                             }}>
-                              <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e40af", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              <div style={{ 
+                                fontSize: "0.875rem", 
+                                fontWeight: 600, 
+                                color: "#1e40af", 
+                                marginBottom: "1rem", 
+                                textTransform: "uppercase", 
+                                letterSpacing: "0.05em" 
+                              }}>
                                 📋 Key Excerpts
                               </div>
                               {hasExcerpts ? (

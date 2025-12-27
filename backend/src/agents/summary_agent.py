@@ -13,10 +13,10 @@ class SummaryAgent(BaseAgent):
     Generate comprehensive meeting summary using Mistral AI and extractive methods.
     
     - **Paragraph Summary**: Mistral AI-generated comprehensive overview
-    - **Bullet Points**: Mistral AI-generated key takeaways (5-8 points, no timestamps)
+    - **Bullet Points**: Same summary content formatted as bullet points
     - **Key Excerpts**: Verbatim quotes from transcript with timestamps
     
-    Bullet points are AI-generated insights.
+    Bullet points show the same information as paragraph but in list format.
     Key excerpts are actual quotes from what was said in the meeting.
     """
     name = "summary_agent"
@@ -109,7 +109,7 @@ class SummaryAgent(BaseAgent):
                     },
                     "abstractive": {
                         "paragraph": "Mistral AI-generated paragraph summary",
-                        "bullets": ["AI-generated bullet 1", "AI-generated bullet 2", ...]
+                        "bullets": ["Bullet point 1 from summary", "Bullet point 2", ...]
                     },
                     "combined": "Paragraph summary (for backward compatibility)"
                 }
@@ -117,8 +117,8 @@ class SummaryAgent(BaseAgent):
             
         Note: 
         - extractive.excerpts = Verbatim quotes from transcript WITH timestamps
-        - abstractive.bullets = AI-generated key points WITHOUT timestamps
-        - abstractive.paragraph = AI-generated comprehensive summary
+        - abstractive.paragraph = AI-generated comprehensive summary in paragraph form
+        - abstractive.bullets = Same summary content as paragraph but in bullet point format
         """
         text: str = payload.get("text", "")
         segments: list = payload.get("segments", [])
@@ -147,19 +147,20 @@ Create a clear, professional summary that:
 
 Summary:"""
 
-        # Generate bullet point summary using Mistral AI
-        bullet_prompt = f"""You are an expert at summarizing meetings. Generate a concise bullet-point summary of this meeting transcript.
+        # Generate the SAME summary but in bullet point format
+        bullet_prompt = f"""You are an expert at summarizing meetings. Generate a comprehensive bullet-point summary of this meeting transcript.
 
 Transcript:
 {text}
 
-Create 5-8 key bullet points that capture:
-- Main topics discussed
+Create a detailed bullet-point summary that covers:
+- Meeting purpose and context
+- All main topics and discussion points
 - Key decisions made
-- Important action items
-- Critical outcomes or conclusions
+- Action items and next steps
+- Important outcomes and conclusions
 
-Format as a simple list with each point on a new line, starting with a dash (-). Be concise and specific.
+Format as bullet points (8-12 points), each starting with a dash (-). Make it comprehensive - this should contain all the same information as a paragraph summary, just organized as bullets. Be specific and detailed.
 
 Bullet Points:"""
 
@@ -176,7 +177,7 @@ Bullet Points:"""
             # Get bullet point summary
             bullet_summary = await get_mistral_completion(
                 prompt=bullet_prompt,
-                max_tokens=400,
+                max_tokens=500,  # Increased for more comprehensive bullets
                 temperature=0.3,
                 api_key=self.token
             )
@@ -207,19 +208,21 @@ Bullet Points:"""
         if not paragraph_summary or len(paragraph_summary) < 50:
             paragraph_summary = extractive.get("text", "No summary available")
         
-        # Fallback for bullets if AI failed
+        # Fallback for bullets if AI failed - convert paragraph to bullets
         if not bullet_points:
-            bullet_points = [excerpt["text"] for excerpt in extractive.get("excerpts", [])[:5]]
+            # Split paragraph into sentences as bullet points
+            sentences = [s.strip() for s in re.split(r'[.!?]+', paragraph_summary) if s.strip()]
+            bullet_points = sentences[:10]  # Take up to 10 sentences
         
-        # Abstractive contains AI-generated content (no timestamps on bullets)
+        # Abstractive contains AI-generated content
         abstractive_result = {
             "paragraph": paragraph_summary,
-            "bullets": bullet_points  # AI-generated key points (no timestamps)
+            "bullets": bullet_points  # Comprehensive summary in bullet format
         }
         
         summary_result = {
             "extractive": extractive,  # Verbatim quotes with timestamps
-            "abstractive": abstractive_result,  # AI-generated summaries
+            "abstractive": abstractive_result,  # AI-generated summaries (paragraph + bullets)
             "combined": paragraph_summary  # Keep paragraph as default combined view
         }
         
