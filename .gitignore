@@ -51,6 +51,7 @@ logs/
 
 # Storage (audio files, transcripts, vectors)
 backend/storage/*
+test/*
 !backend/storage/.gitkeep
 !backend/storage/vectors/.gitkeep
 
