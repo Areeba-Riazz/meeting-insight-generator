@@ -97,6 +97,84 @@ export default function SearchPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#fafafa", position: "relative", overflow: "hidden" }}>
       <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) translateX(0px) rotate(0deg); }
+          33% { transform: translateY(-40px) translateX(30px) rotate(5deg); }
+          66% { transform: translateY(30px) translateX(-30px) rotate(-5deg); }
+        }
+        @keyframes floatReverse {
+          0%, 100% { transform: translateY(0px) translateX(0px) scale(1); }
+          33% { transform: translateY(30px) translateX(-25px) scale(1.1); }
+          66% { transform: translateY(-25px) translateX(25px) scale(0.95); }
+        }
+        .animated-bg {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+          background: linear-gradient(to bottom, #fafafa 0%, #f0f9ff 100%);
+        }
+        .animated-bg::before,
+        .animated-bg::after {
+          content: '';
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.4;
+        }
+        .animated-bg::before {
+          top: 10%;
+          left: 10%;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+          animation: float 20s ease-in-out infinite;
+        }
+        .animated-bg::after {
+          bottom: 10%;
+          right: 10%;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+          animation: floatReverse 18s ease-in-out infinite;
+        }
+        .content-wrapper {
+          position: relative;
+          z-index: 1;
+        }
+        .floating-shape {
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.08);
+          pointer-events: none;
+        }
+        .shape-1 {
+          width: 150px;
+          height: 150px;
+          top: 15%;
+          right: 15%;
+          animation: float 15s ease-in-out infinite;
+        }
+        .shape-2 {
+          width: 100px;
+          height: 100px;
+          bottom: 20%;
+          left: 10%;
+          background: rgba(139, 92, 246, 0.08);
+          animation: floatReverse 12s ease-in-out infinite;
+        }
+        .shape-3 {
+          width: 80px;
+          height: 80px;
+          top: 40%;
+          left: 20%;
+          background: rgba(16, 185, 129, 0.08);
+          animation: float 18s ease-in-out infinite 2s;
+        }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
@@ -151,7 +229,11 @@ export default function SearchPage() {
         }
       `}</style>
 
-      <div className="animated-bg" />
+      <div className="animated-bg">
+        <div className="floating-shape shape-1" />
+        <div className="floating-shape shape-2" />
+        <div className="floating-shape shape-3" />
+      </div>
       <Header />
 
       <div className="content-wrapper" style={{ maxWidth: 1200, margin: "0 auto", padding: "3rem 1.5rem" }}>

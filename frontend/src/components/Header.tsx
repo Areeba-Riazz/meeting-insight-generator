@@ -74,7 +74,7 @@ export function Header() {
           justifyContent: "space-between"
         }}>
           <div 
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/projects")}
             style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}
           >
             <div style={{ 

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getInsights } from "../api/client";
 import { InsightsViewer } from "../components/InsightsViewer";
 import { Header } from "../components/Header";
+import { FloatingChat } from "../components/FloatingChat";
 import { AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -30,16 +31,71 @@ export default function InsightsPage() {
         const res = await getInsights(meetingId);
         setInsights(res.insights);
         
-        // Try to load video
+        // Try to load video using legacy_meeting_id if available, otherwise fall back to UUID
+        // Backend stores files using legacy meeting_id format (e.g., "weekly_meeting_example_2025-12-27_20-32-17")
+        // Ensure we only use the folder name, not the full path
+        let storageMeetingId = res.legacy_meeting_id || meetingId;
+        
+        // If legacy_meeting_id contains a path (e.g., "folder/audio/file.mp4" or "folder\audio\file.mp4"), extract just the folder name
+        // Handle both forward slashes (Unix) and backslashes (Windows)
+        if (storageMeetingId) {
+          // Normalize backslashes to forward slashes
+          const normalized = storageMeetingId.replace(/\\/g, '/');
+          // Extract just the first part (folder name)
+          if (normalized.includes('/')) {
+            storageMeetingId = normalized.split('/')[0];
+          } else {
+            storageMeetingId = normalized;
+          }
+        }
+        
         try {
-          const videoPath = `${API_BASE}/storage/${meetingId}/audio/`;
-          const metadataRes = await fetch(`${API_BASE}/storage/${meetingId}/metadata.json`);
-          if (metadataRes.ok) {
-            const metadata = await metadataRes.json();
-            const filename = metadata.file_info?.original_filename;
-            if (filename) {
-              setVideoUrl(`${videoPath}${filename}`);
+          // Construct paths - metadata.json is in the meeting folder root, not in audio/
+          const metadataUrl = `${API_BASE}/storage/${encodeURIComponent(storageMeetingId)}/metadata.json`;
+          console.log(`[InsightsPage] Fetching metadata from: ${metadataUrl}`);
+          console.log(`[InsightsPage] legacy_meeting_id from API: ${res.legacy_meeting_id}`);
+          console.log(`[InsightsPage] Using storageMeetingId: ${storageMeetingId}`);
+          
+          let filename = res.original_filename; // Fallback to API response
+          
+          try {
+            const metadataRes = await fetch(metadataUrl);
+            if (metadataRes.ok) {
+              // Check if response has content
+              const contentType = metadataRes.headers.get("content-type");
+              if (!contentType || !contentType.includes("application/json")) {
+                console.warn(`[InsightsPage] Metadata response is not JSON, content-type: ${contentType}`);
+              }
+              
+              // Get response text first to check if it's valid
+              const text = await metadataRes.text();
+              if (!text || text.trim().length === 0) {
+                console.warn(`[InsightsPage] Metadata file is empty at ${metadataUrl}, using original_filename from API`);
+              } else {
+                try {
+                  const metadata = JSON.parse(text);
+                  filename = metadata.file_info?.original_filename || res.original_filename || filename;
+                } catch (parseError) {
+                  console.error(`[InsightsPage] Failed to parse metadata JSON: ${parseError}`);
+                  console.error(`[InsightsPage] Response text (first 200 chars): ${text.substring(0, 200)}`);
+                  // Continue with original_filename from API
+                }
+              }
+            } else {
+              console.warn(`[InsightsPage] Metadata not found at ${metadataUrl}, status: ${metadataRes.status}, using original_filename from API`);
             }
+          } catch (fetchError) {
+            console.warn(`[InsightsPage] Error fetching metadata: ${fetchError}, using original_filename from API`);
+          }
+          
+          // Set video URL if we have a filename (from metadata or API)
+          if (filename) {
+            // Video file is in the audio subfolder
+            const videoUrl = `${API_BASE}/storage/${encodeURIComponent(storageMeetingId)}/audio/${encodeURIComponent(filename)}`;
+            console.log(`[InsightsPage] Setting video URL: ${videoUrl}`);
+            setVideoUrl(videoUrl);
+          } else {
+            console.warn(`[InsightsPage] No filename available for video`);
           }
         } catch (err) {
           console.error("Failed to load video:", err);
@@ -299,6 +355,7 @@ export default function InsightsPage() {
           )}
         </div>
       </div>
+      <FloatingChat context={insights ? `Viewing meeting insights for meeting ID: ${meetingId}` : undefined} />
     </div>
   );
 }

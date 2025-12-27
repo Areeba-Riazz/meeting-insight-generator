@@ -1,13 +1,33 @@
-import type { UploadResponse, StatusResponse, InsightsResponse, SearchRequest, SearchResponse, SearchStats } from "../types/api";
+import type { 
+  UploadResponse, 
+  StatusResponse, 
+  InsightsResponse, 
+  SearchRequest, 
+  SearchResponse, 
+  SearchStats,
+  Project,
+  ProjectMeeting,
+  CreateProjectRequest,
+  UpdateProjectRequest,
+  ProjectListResponse,
+  ProjectMeetingsResponse,
+} from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
 
 export async function uploadMeeting(
   file: File,
+  projectId?: string,
   onProgress?: (progress: number) => void
 ): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
+
+  // Build URL with optional project_id
+  let url = `${API_BASE}/api/v1/upload`;
+  if (projectId) {
+    url += `?project_id=${encodeURIComponent(projectId)}`;
+  }
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -55,7 +75,7 @@ export async function uploadMeeting(
     };
 
     // Open and send request
-    xhr.open("POST", `${API_BASE}/api/v1/upload`);
+    xhr.open("POST", url);
     xhr.send(formData);
   });
 }
@@ -117,6 +137,142 @@ export async function getSearchStats(): Promise<SearchStats> {
   const res = await fetch(`${API_BASE}/api/v1/search/stats`);
   if (!res.ok) {
     throw new Error(`Failed to fetch search stats: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+// Project management functions
+export async function createProject(request: CreateProjectRequest): Promise<Project> {
+  const res = await fetch(`${API_BASE}/api/v1/projects`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to create project: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getProject(projectId: string): Promise<Project> {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to fetch project: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function listProjects(skip = 0, limit = 100): Promise<ProjectListResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/projects?skip=${skip}&limit=${limit}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch projects: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function updateProject(
+  projectId: string,
+  request: UpdateProjectRequest
+): Promise<Project> {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to update project: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function deleteProject(projectId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to delete project: ${res.statusText}`);
+  }
+  return { success: true };
+}
+
+// Project meetings functions
+export async function getProjectMeetings(
+  projectId: string,
+  skip = 0,
+  limit = 100
+): Promise<ProjectMeetingsResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/projects/${projectId}/meetings?skip=${skip}&limit=${limit}`
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to fetch project meetings: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getProjectMeeting(
+  projectId: string,
+  meetingId: string
+): Promise<ProjectMeeting> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/projects/${projectId}/meetings/${meetingId}`
+  );
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to fetch meeting: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function deleteProjectMeeting(
+  projectId: string,
+  meetingId: string
+): Promise<{ success: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/projects/${projectId}/meetings/${meetingId}`,
+    {
+      method: "DELETE",
+    }
+  );
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Failed to delete meeting: ${res.statusText}`);
+  }
+  return { success: true };
+}
+
+// Chat functions
+export interface ChatRequest {
+  message: string;
+  context?: string;
+}
+
+export interface ChatResponse {
+  response: string;
+}
+
+export async function sendChatMessage(
+  message: string,
+  context?: string
+): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ message, context }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(errorData.detail || `Chat failed: ${res.statusText}`);
   }
   return res.json();
 }

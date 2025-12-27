@@ -25,7 +25,10 @@ type InsightsPayload = {
   };
   summary?: string | {
     combined?: string;
-    abstractive?: string;
+    abstractive?: string | {
+      paragraph?: string;
+      bullets?: string[];
+    };
     extractive?: {
       text?: string;
       excerpts?: Array<{
@@ -360,13 +363,28 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
               </button>
             </div>
             {summary ? (
+              (() => {
+                // Parse summary if it's a JSON string
+                let parsedSummary = summary;
+                if (typeof summary === 'string') {
+                  try {
+                    const parsed = JSON.parse(summary);
+                    if (parsed && typeof parsed === 'object') {
+                      parsedSummary = parsed;
+                    }
+                  } catch (e) {
+                    // Not JSON, keep as string
+                  }
+                }
+                
+                return (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {/* If user wants bullets, prefer extractive excerpts, else show paragraph/combined */}
                 {summaryMode === 'bullets' ? (
                   (() => {
                     // Prefer explicit excerpts list when available
-                    const excerpts = summary && typeof summary !== 'string' && summary.extractive && Array.isArray(summary.extractive.excerpts)
-                      ? summary.extractive.excerpts
+                    const excerpts = parsedSummary && typeof parsedSummary !== 'string' && parsedSummary.extractive && Array.isArray(parsedSummary.extractive.excerpts)
+                      ? parsedSummary.extractive.excerpts
                       : null;
 
                     if (excerpts && excerpts.length > 0) {
@@ -396,8 +414,31 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                       );
                     }
 
+                    // Check for abstractive.bullets first
+                    const abstractiveBullets = parsedSummary && typeof parsedSummary !== 'string' && parsedSummary.abstractive && typeof parsedSummary.abstractive === 'object' && Array.isArray(parsedSummary.abstractive.bullets)
+                      ? parsedSummary.abstractive.bullets
+                      : null;
+
+                    if (abstractiveBullets && abstractiveBullets.length > 0) {
+                      return (
+                        <div style={{ padding: '1.5rem', background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: '10px' }}>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e40af', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            📌 Key Points
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#374151', lineHeight: 1.7 }}>
+                            {abstractiveBullets.map((b: string, i: number) => (
+                              <li key={i} style={{ marginBottom: '0.75rem' }} dangerouslySetInnerHTML={{ __html: b }} />
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    }
+
                     // Fallback: try to create bullets from combined/abstractive text
-                    const para = typeof summary === 'string' ? summary : (summary.combined || summary.abstractive || '');
+                    const abstractivePara = parsedSummary && typeof parsedSummary !== 'string' && parsedSummary.abstractive 
+                      ? (typeof parsedSummary.abstractive === 'string' ? parsedSummary.abstractive : parsedSummary.abstractive.paragraph)
+                      : null;
+                    const para = typeof parsedSummary === 'string' ? parsedSummary : (parsedSummary.combined || abstractivePara || '');
                     if (!para) return (
                       <div style={{ padding: '1.5rem', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: '10px', color: '#9ca3af' }}>
                         No bullet points available
@@ -421,7 +462,7 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                   })()
                 ) : (
                   // Paragraph mode: reuse existing paragraph rendering logic
-                  typeof summary === 'string' ? (
+                  typeof parsedSummary === 'string' ? (
                     <div style={{
                       padding: "1.5rem",
                       background: "#faf5ff",
@@ -435,12 +476,13 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                         margin: 0,
                         whiteSpace: "pre-wrap"
                       }}>
-                        {summary}
+                        {parsedSummary}
                       </p>
                     </div>
                   ) : (
                     <>
-                      {summary.combined && (
+                      {/* Show combined summary if available */}
+                      {parsedSummary.combined && (
                         <div style={{
                           padding: "1.5rem",
                           background: "#faf5ff",
@@ -457,17 +499,47 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                             margin: 0,
                             whiteSpace: "pre-wrap"
                           }}>
-                            {summary.combined}
+                            {parsedSummary.combined}
                           </p>
                         </div>
                       )}
-                      {summary.extractive && (
+                      {/* Show abstractive paragraph if no combined but abstractive exists */}
+                      {!parsedSummary.combined && parsedSummary.abstractive && (
                         (() => {
-                          const extractiveData = typeof summary.extractive === 'string' 
-                            ? { text: summary.extractive, excerpts: [] }
-                            : summary.extractive;
+                          const abstractiveText = typeof parsedSummary.abstractive === 'string' 
+                            ? parsedSummary.abstractive 
+                            : parsedSummary.abstractive.paragraph;
+                          if (!abstractiveText) return null;
+                          return (
+                            <div style={{
+                              padding: "1.5rem",
+                              background: "#faf5ff",
+                              border: "1px solid #e9d5ff",
+                              borderRadius: "10px"
+                            }}>
+                              <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#7c3aed", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                📝 Main Summary
+                              </div>
+                              <p style={{
+                                fontSize: "0.95rem",
+                                lineHeight: 1.7,
+                                color: "#374151",
+                                margin: 0,
+                                whiteSpace: "pre-wrap"
+                              }}>
+                                {abstractiveText}
+                              </p>
+                            </div>
+                          );
+                        })()
+                      )}
+                      {parsedSummary.extractive && (
+                        (() => {
+                          const extractiveData = typeof parsedSummary.extractive === 'string' 
+                            ? { text: parsedSummary.extractive, excerpts: [] }
+                            : parsedSummary.extractive;
                           const hasExcerpts = extractiveData.excerpts && extractiveData.excerpts.length > 0;
-                          const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== summary.combined);
+                          const shouldShow = hasExcerpts || (extractiveData.text && extractiveData.text !== parsedSummary.combined);
                           if (!shouldShow) return null;
                           return (
                             <div style={{
@@ -547,6 +619,8 @@ export function InsightsViewer({ insights, videoUrl }: Props) {
                   )
                 )}
               </div>
+                );
+              })()
             ) : (
               <div style={{
                 padding: "2rem",

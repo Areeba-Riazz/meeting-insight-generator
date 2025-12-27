@@ -1,33 +1,74 @@
-from fastapi import APIRouter, HTTPException
-from pathlib import Path
-import json
-from typing import List, Dict, Any
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.database import get_db
+from src.services.database_service import DatabaseService
 from src.api.routes.upload import pipeline_store
 
 router = APIRouter()
 
 
 @router.get("/insights/{meeting_id}")
-async def get_insights(meeting_id: str):
-    # Try to get from in-memory store first
-    result = pipeline_store.get_result(meeting_id)
+async def get_insights(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get insights for a meeting (supports both UUID and legacy meeting_id)."""
+    # Try to parse as UUID first
+    try:
+        meeting_uuid = uuid.UUID(meeting_id)
+    except ValueError:
+        # Legacy meeting_id format - try in-memory store first
+        result = pipeline_store.get_result(meeting_id)
+        if result:
+            return {
+                "meeting_id": meeting_id,
+                "insights": result,
+                "legacy_meeting_id": meeting_id,  # Already in legacy format
+            }
+        raise HTTPException(
+            status_code=404,
+            detail="Meeting not found. Please use UUID format for database meetings.",
+        )
+
+    # Load from database
+    db_service = DatabaseService(db)
+    meeting = await db_service.get_meeting(meeting_uuid)
     
-    # If not in memory, try to load from storage folder
-    if result is None:
-        storage_path = Path("storage") / meeting_id / "insights.json"
-        if storage_path.exists():
-            try:
-                with open(storage_path, "r", encoding="utf-8") as f:
-                    result = json.load(f)
-                print(f"[Insights] Loaded insights from storage for {meeting_id}")
-            except Exception as e:
-                print(f"[Insights] Error loading insights from storage: {e}")
-                raise HTTPException(status_code=404, detail="Meeting not found or not processed yet")
-        else:
-            raise HTTPException(status_code=404, detail="Meeting not found or not processed yet")
+    if not meeting:
+        # Fallback to in-memory store
+        result = pipeline_store.get_result(meeting_id)
+        if result:
+            return {"meeting_id": meeting_id, "insights": result}
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Get all insights from database
+    insights = await db_service.get_all_insights(meeting_uuid)
     
-    return {"meeting_id": meeting_id, "insights": result}
+    if not insights:
+        raise HTTPException(
+            status_code=404, detail="Insights not found for this meeting"
+        )
+
+    # Extract legacy meeting_id from file_path for storage access
+    # file_path format: "meeting_id/audio/filename.mp4" (or "meeting_id\audio\filename.mp4" on Windows)
+    legacy_meeting_id = None
+    if meeting.file_path:
+        # Handle both forward slashes (Unix) and backslashes (Windows)
+        # Normalize path separators to forward slashes first
+        normalized_path = meeting.file_path.replace("\\", "/")
+        path_parts = normalized_path.split("/")
+        if len(path_parts) > 0:
+            legacy_meeting_id = path_parts[0]
+
+    return {
+        "meeting_id": str(meeting_uuid),
+        "insights": insights,
+        "file_path": meeting.file_path,
+        "legacy_meeting_id": legacy_meeting_id,  # For accessing storage files
+        "original_filename": meeting.original_filename,
+    }
 
 
 @router.get("/meetings")

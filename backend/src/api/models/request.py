@@ -29,3 +29,12 @@ class SearchRequest(BaseModel):
     page: int = Field(default=1, ge=1, description="Page number for pagination")
     page_size: int = Field(default=10, ge=1, le=100, description="Results per page")
 
+
+class ChatRequest(BaseModel):
+    """Request model for chat endpoint."""
+    message: str = Field(..., description="User message", min_length=1, max_length=2000)
+    context: Optional[str] = Field(
+        default=None,
+        description="Optional context about the current page/view",
+        max_length=1000
+    )

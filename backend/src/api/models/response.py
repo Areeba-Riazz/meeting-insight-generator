@@ -30,3 +30,7 @@ class SearchResponse(BaseModel):
     segment_types_filter: Optional[List[str]] = Field(None, description="Segment types that were filtered")
     meeting_ids_filter: Optional[List[str]] = Field(None, description="Meeting IDs that were filtered")
 
+
+class ChatResponse(BaseModel):
+    """Response model for chat endpoint."""
+    response: str = Field(..., description="AI assistant's response")

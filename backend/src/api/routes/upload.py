@@ -6,9 +6,11 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents.action_item_agent import ActionItemAgent
 from src.agents.config import AgentSettings
@@ -16,7 +18,9 @@ from src.agents.decision_agent import DecisionAgent
 from src.agents.sentiment_agent import SentimentAgent
 from src.agents.summary_agent import SummaryAgent
 from src.agents.topic_agent import TopicAgent
+from src.core.database import get_db
 from src.services.agent_orchestrator import AgentOrchestrator
+from src.services.database_service import DatabaseService
 from src.services.pipeline_store import PipelineStore
 from src.services.transcript_store import TranscriptStore
 from src.services.transcription_service import TranscriptionService
@@ -112,7 +116,7 @@ def generate_meeting_id(filename: str) -> tuple[str, str]:
 
 def create_metadata_file(
     meeting_dir: Path,
-    meeting_uuid: str,
+    meeting_uuid: str | uuid.UUID,
     original_filename: str,
     folder_name: str,
     file_size: int,
@@ -123,14 +127,17 @@ def create_metadata_file(
     
     Args:
         meeting_dir: Path to meeting directory
-        meeting_uuid: UUID for internal tracking
+        meeting_uuid: UUID for internal tracking (can be UUID object or string)
         original_filename: Original uploaded filename
         folder_name: Generated folder name
         file_size: Size of uploaded file in bytes
         content_type: MIME type of uploaded file
     """
+    # Convert UUID to string if needed
+    uuid_str = str(meeting_uuid) if meeting_uuid else None
+    
     metadata = {
-        "uuid": meeting_uuid,
+        "uuid": uuid_str,
         "meeting_name": Path(original_filename).stem,
         "folder_name": folder_name,
         "upload_timestamp": datetime.now().isoformat(),
@@ -142,10 +149,34 @@ def create_metadata_file(
     }
     
     metadata_path = meeting_dir / "metadata.json"
-    with metadata_path.open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2, ensure_ascii=False)
+    try:
+        # Write to a temporary file first, then rename (atomic write)
+        temp_path = metadata_path.with_suffix('.json.tmp')
+        with temp_path.open("w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+            f.flush()  # Ensure all data is written
+            os.fsync(f.fileno())  # Force write to disk
+        
+        # Atomic rename (works on both Windows and Unix)
+        temp_path.replace(metadata_path)
+        logger.info(f"[Upload] Successfully created metadata.json at {metadata_path}")
+    except Exception as e:
+        logger.error(f"[Upload] Failed to write metadata.json: {e}", exc_info=True)
+        # Clean up temp file if it exists
+        temp_path = metadata_path.with_suffix('.json.tmp')
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        raise
 
-async def process_meeting(meeting_id: str, audio_path: Path) -> None:
+async def process_meeting(
+    meeting_id: str,
+    audio_path: Path,
+    meeting_uuid: Optional[uuid.UUID] = None,
+    db: Optional[AsyncSession] = None,
+) -> None:
     """
     Process meeting with robust error handling and connection resilience.
     
@@ -238,7 +269,24 @@ async def process_meeting(meeting_id: str, audio_path: Path) -> None:
         except Exception as e:
             logger.warning(f"[Upload] Error saving to pipeline store: {e}")
         
-        # Save insights to JSON file in storage with retries
+        # Save insights to database if meeting_uuid and db are provided
+        if meeting_uuid and db:
+            try:
+                db_service = DatabaseService(db)
+                await db_service.save_all_insights(meeting_uuid, results)
+                await db_service.update_meeting_status(meeting_uuid, "completed")
+                await db.commit()  # Ensure status update is committed
+                logger.info(f"[Upload] Saved insights to database and updated status for {meeting_uuid}")
+            except Exception as e:
+                logger.error(f"[Upload] Error saving insights to database: {e}", exc_info=True)
+                # Try to rollback
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                # Continue with file-based storage as fallback
+        
+        # Save insights to JSON file in storage with retries (for backward compatibility)
         meeting_dir = Path("storage") / meeting_id
         insights_file = meeting_dir / "insights.json"
         
@@ -307,11 +355,35 @@ async def process_meeting(meeting_id: str, audio_path: Path) -> None:
         logger.info(f"[Upload] Released processing lock for {meeting_id}")
 
 
+async def process_meeting_with_db(
+    meeting_id: str,
+    audio_path: Path,
+    meeting_uuid: uuid.UUID,
+) -> None:
+    """Wrapper to process meeting with database session."""
+    from src.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        try:
+            await process_meeting(meeting_id, audio_path, meeting_uuid, db)
+        except Exception as e:
+            logger.error(f"[Upload] Error in process_meeting_with_db: {e}", exc_info=True)
+            # Update meeting status to error
+            try:
+                db_service = DatabaseService(db)
+                await db_service.update_meeting_status(meeting_uuid, "error")
+                await db.commit()
+            except Exception as db_error:
+                logger.error(f"[Upload] Error updating meeting status: {db_error}")
+
+
 
 @router.post("/upload")
 async def upload_meeting_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    project_id: Optional[str] = Query(None, description="Project UUID (optional)"),
+    db: Optional[AsyncSession] = Depends(get_db),
 ):
     """
     Upload meeting audio file with connection error handling.
@@ -334,8 +406,56 @@ async def upload_meeting_file(
         )
 
     try:
+        # Parse project_id if provided
+        project_uuid = None
+        if project_id:
+            try:
+                project_uuid = uuid.UUID(project_id)
+                # Verify project exists
+                if db:
+                    db_service = DatabaseService(db)
+                    project = await db_service.get_project(project_uuid)
+                    if not project:
+                        raise HTTPException(
+                            status_code=404, detail=f"Project {project_id} not found"
+                        )
+                else:
+                    logger.warning("[Upload] Database session not available, skipping project validation")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid project_id format: {project_id}"
+                )
+
         # Generate meeting ID from filename and timestamp
-        meeting_id, meeting_uuid = generate_meeting_id(file.filename)
+        meeting_id, meeting_uuid_str = generate_meeting_id(file.filename)
+        
+        # Create meeting record in database if project_id is provided
+        meeting_uuid = None
+        if project_uuid and db:
+            try:
+                db_service = DatabaseService(db)
+                meeting = await db_service.create_meeting(
+                    project_id=project_uuid,
+                    meeting_name=Path(file.filename).stem,
+                    original_filename=file.filename,
+                    file_path="",  # Will be updated after file is saved
+                    file_size=0,  # Will be updated after file is read
+                    content_type=file.content_type,
+                )
+                meeting_uuid = meeting.id
+                # Commit immediately so the meeting is visible to background tasks
+                await db.commit()
+                logger.info(f"[Upload] Created and committed meeting record in database: {meeting_uuid}")
+            except Exception as e:
+                logger.error(f"[Upload] Error creating meeting record: {e}", exc_info=True)
+                # Try to rollback if commit failed
+                try:
+                    await db.rollback()
+                except Exception as rollback_error:
+                    logger.error(f"[Upload] Error during rollback: {rollback_error}")
+                # Continue without database record (backward compatibility)
+                meeting_uuid = None
+        
         logger.info(f"[Upload] New upload: {meeting_id} - {file.filename}")
         
         # Set uploading status - track file operations
@@ -423,9 +543,11 @@ async def upload_meeting_file(
         )
         
         try:
+            # Convert UUID to string if it's a UUID object
+            uuid_for_metadata = str(meeting_uuid) if meeting_uuid else None
             create_metadata_file(
                 meeting_dir=meeting_dir.parent,
-                meeting_uuid=meeting_uuid,
+                meeting_uuid=uuid_for_metadata,
                 original_filename=file.filename,
                 folder_name=meeting_id,
                 file_size=len(content),
@@ -433,7 +555,7 @@ async def upload_meeting_file(
             )
             logger.info(f"[Upload] Created metadata for {meeting_id}")
         except Exception as e:
-            logger.warning(f"[Upload] Error creating metadata for {meeting_id}: {e}")
+            logger.error(f"[Upload] Error creating metadata for {meeting_id}: {e}", exc_info=True)
             # Non-critical - continue anyway
 
         # Validate file type/size
@@ -469,12 +591,55 @@ async def upload_meeting_file(
                 detail="Another file is currently being processed. Please wait for it to complete."
             )
 
+        # Update meeting record with file paths if database record exists
+        # IMPORTANT: Commit immediately so status route can find the meeting by file_path
+        if meeting_uuid and db:
+            try:
+                db_service = DatabaseService(db)
+                relative_audio_path = str(audio_path.relative_to(Path("storage")))
+                await db_service.update_meeting_paths(
+                    meeting_id=meeting_uuid,
+                    transcript_path=None,  # Will be set after processing
+                    diarized_transcript_path=None,  # Will be set after processing
+                )
+                # Update file_path and file_size
+                meeting = await db_service.get_meeting(meeting_uuid)
+                if meeting:
+                    meeting.file_path = relative_audio_path
+                    meeting.file_size_bytes = len(content)
+                    await db.flush()
+                # Commit immediately so status route can extract legacy_meeting_id from file_path
+                await db.commit()
+                logger.info(f"[Upload] Updated and committed meeting record with file paths: {relative_audio_path}")
+            except Exception as e:
+                logger.warning(f"[Upload] Error updating meeting record: {e}")
+                # Try to rollback if commit failed
+                try:
+                    await db.rollback()
+                except Exception as rollback_error:
+                    logger.error(f"[Upload] Error during rollback: {rollback_error}")
+
         # Upload complete - processing will start immediately in background
         pipeline_store.set_status(meeting_id, "uploading", progress=100, stage="Upload complete")
-        background_tasks.add_task(process_meeting, meeting_id, audio_path)
+        
+        # Pass database session and meeting UUID to process_meeting if available
+        if meeting_uuid and db:
+            # Create a new session for background task
+            from src.core.database import AsyncSessionLocal
+            background_tasks.add_task(
+                process_meeting_with_db,
+                meeting_id,
+                audio_path,
+                meeting_uuid,
+            )
+        else:
+            background_tasks.add_task(process_meeting, meeting_id, audio_path)
         
         logger.info(f"[Upload] File uploaded successfully for {meeting_id}, starting background processing")
-        return {"meeting_id": meeting_id, "status": "uploading"}
+        return {
+            "meeting_id": str(meeting_uuid) if meeting_uuid else meeting_id,
+            "status": "uploading",
+        }
         
     except HTTPException:
         raise  # Re-raise HTTP exceptions
