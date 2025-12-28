@@ -76,3 +76,17 @@ def mock_env_vars(monkeypatch):
     monkeypatch.setenv("HUGGINGFACE_TOKEN", "test_hf_token")
     monkeypatch.setenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
+
+@pytest.fixture
+def mock_transcription_result():
+    """Create a mock TranscriptionResult for testing."""
+    from src.services.transcription_service import TranscriptionResult, TranscriptionSegment
+    
+    return TranscriptionResult(
+        text="This is a test transcription. Welcome to the meeting.",
+        segments=[
+            TranscriptionSegment(text="This is a test transcription.", start=0.0, end=2.0, speaker="SPEAKER_00"),
+            TranscriptionSegment(text="Welcome to the meeting.", start=2.0, end=4.0, speaker="SPEAKER_01"),
+        ],
+        model="test_model"
+    )

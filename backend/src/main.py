@@ -7,6 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .api.routes import api_router
 from .utils.error_handlers import suppress_asyncio_socket_shutdown_errors
+from .utils.metrics import (
+    get_metrics_content,
+    get_metrics_content_type,
+)
 
 class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
@@ -18,6 +22,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
 @lru_cache
@@ -47,3 +52,12 @@ app.include_router(api_router)
 @app.get("/health", tags=["health"])
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/metrics", tags=["monitoring"])
+async def metrics():
+    """Prometheus metrics endpoint."""
+    from fastapi.responses import Response
+    content = get_metrics_content()
+    content_type = get_metrics_content_type()
+    return Response(content=content, media_type=content_type)

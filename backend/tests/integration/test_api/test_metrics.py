@@ -19,7 +19,9 @@ def test_metrics_endpoint_exists(client):
     
     # Should return 200 even if Prometheus is not available
     assert response.status_code == 200
-    assert response.headers["content-type"] in ["text/plain; version=0.0.4; charset=utf-8", "text/plain"]
+    # Accept different versions of Prometheus content type
+    content_type = response.headers.get("content-type", "")
+    assert "text/plain" in content_type
     
     # Should return some content (either metrics or a message)
     assert len(response.content) > 0

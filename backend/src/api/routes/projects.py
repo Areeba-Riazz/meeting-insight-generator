@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from src.core.database import get_db
 from src.services.database_service import DatabaseService
@@ -26,15 +26,14 @@ class UpdateProjectRequest(BaseModel):
 
 
 class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: uuid.UUID
     name: str
     description: Optional[str]
     created_at: str
     updated_at: str
     meetings_count: Optional[int] = None
-
-    class Config:
-        from_attributes = True
 
 
 class ProjectListResponse(BaseModel):

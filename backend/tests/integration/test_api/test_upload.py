@@ -2,7 +2,7 @@
 
 import io
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 
 from src.main import app
@@ -33,18 +33,45 @@ def sample_audio_file():
 @pytest.mark.integration
 def test_upload_endpoint_success(client, sample_video_file, temp_storage_dir):
     """Test successful file upload."""
-    with patch('src.api.routes.upload.Path', return_value=temp_storage_dir):
-        with patch('src.api.routes.upload.asyncio.create_task'):
-            response = client.post(
-                "/api/v1/upload",
-                files={"file": ("test.mp4", sample_video_file, "video/mp4")},
-                data={"project_id": "test_project"}
-            )
-            
-            assert response.status_code in [200, 202]  # Accepted or OK
-            data = response.json()
-            assert "meeting_id" in data
-            assert "status" in data
+    # Mock the database dependency to avoid async connection issues
+    # The database session needs to be properly mocked as an async context manager
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    mock_db.rollback = AsyncMock()
+    mock_db.close = AsyncMock()
+    mock_db.flush = AsyncMock()
+    
+    # Mock the session's context manager behavior
+    mock_session_context = MagicMock()
+    mock_session_context.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_context.__aexit__ = AsyncMock(return_value=None)
+    
+    async def mock_db_gen():
+        yield mock_db
+    
+    with patch('src.api.routes.upload.get_db', return_value=mock_db_gen()):
+        with patch('src.api.routes.upload.Path', return_value=temp_storage_dir):
+            # Mock process_meeting and process_meeting_with_db to avoid actual processing
+            with patch('src.api.routes.upload.process_meeting', new_callable=AsyncMock):
+                with patch('src.api.routes.upload.process_meeting_with_db', new_callable=AsyncMock):
+                    # Mock pipeline_store.acquire_processing to allow the upload
+                    with patch('src.api.routes.upload.pipeline_store.acquire_processing', return_value=True):
+                        # Mock database service methods
+                        with patch('src.api.routes.upload.DatabaseService') as mock_db_service:
+                            mock_service_instance = MagicMock()
+                            mock_service_instance.create_meeting = AsyncMock(return_value=MagicMock(id=1))
+                            mock_db_service.return_value = mock_service_instance
+                            
+                            response = client.post(
+                                "/api/v1/upload",
+                                files={"file": ("test.mp4", sample_video_file, "video/mp4")},
+                                data={"project_id": "test_project"}
+                            )
+                            
+                            assert response.status_code in [200, 202]  # Accepted or OK
+                            data = response.json()
+                            assert "meeting_id" in data
+                            assert "status" in data
 
 
 @pytest.mark.integration

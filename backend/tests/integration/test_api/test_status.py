@@ -1,6 +1,7 @@
 """Integration tests for status endpoint."""
 
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.main import app
@@ -53,11 +54,10 @@ def test_status_endpoint_completed(client):
     meeting_id = "completed_meeting"
     
     with patch('src.api.routes.status.pipeline_store') as mock_store:
-        mock_store.get_status.return_value = {
-            "meeting_id": meeting_id,
-            "status": "completed",
-            "progress": 100.0
-        }
+        # The status endpoint calls get_status(), get_progress(), and get_stage() separately
+        mock_store.get_status.return_value = "completed"
+        mock_store.get_progress.return_value = 100.0
+        mock_store.get_stage.return_value = "Completed"
         
         response = client.get(f"/api/v1/status/{meeting_id}")
         

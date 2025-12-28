@@ -152,9 +152,12 @@ def test_huggingface_client_query_success(sentiment_agent):
         ]
     ]
     
-    with patch('src.agents.sentiment_agent.requests.post') as mock_post:
-        mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = mock_response
+    # Patch requests at the module level where it's imported in the method
+    with patch('requests.post') as mock_post:
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = mock_response
+        mock_post.return_value = mock_response_obj
         
         result = sentiment_agent._analyze_sentiment_hf("Great meeting!")
         

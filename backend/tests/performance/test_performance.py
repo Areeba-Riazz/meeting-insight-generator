@@ -39,18 +39,25 @@ async def test_agent_execution_time(large_transcript):
     # Mock LLM calls to avoid actual API calls
     with patch('src.agents.topic_agent.get_mistral_completion', new_callable=AsyncMock) as mock_topic:
         with patch('src.agents.summary_agent.get_mistral_completion', new_callable=AsyncMock) as mock_summary:
-            mock_topic.return_value = '[{"topic": "Test", "keywords": ["test"], "summary": "Test"}]'
-            mock_summary.side_effect = ["Test summary", "- Test bullet"]
-            
-            max_time = 5.0  # 5 seconds max per agent
-            
-            for agent in agents:
-                start_time = time.time()
-                result = await agent.run(large_transcript)
-                elapsed = time.time() - start_time
-                
-                assert elapsed < max_time, f"{agent.name} took {elapsed:.2f}s, exceeding {max_time}s"
-                assert result is not None
+            with patch('src.agents.action_item_agent.get_mistral_completion', new_callable=AsyncMock) as mock_action:
+                # Mock DecisionAgent's _extract_with_groq method to avoid API calls
+                with patch.object(DecisionAgent, '_extract_with_groq', new_callable=AsyncMock) as mock_decision:
+                    # Mock sentiment agent to use fallback (faster than API)
+                    with patch.object(SentimentAgent, '_analyze_sentiment_hf', return_value=None):
+                        mock_topic.return_value = '[{"topic": "Test", "keywords": ["test"], "summary": "Test"}]'
+                        mock_summary.side_effect = ["Test summary", "- Test bullet"]
+                        mock_action.return_value = "- Action: Test action\n  Assignee: Test\n  Due: Test"
+                        mock_decision.return_value = [{"decision": "Test decision"}]
+                        
+                        max_time = 5.0  # 5 seconds max per agent
+                        
+                        for agent in agents:
+                            start_time = time.time()
+                            result = await agent.run(large_transcript)
+                            elapsed = time.time() - start_time
+                            
+                            assert elapsed < max_time, f"{agent.name} took {elapsed:.2f}s, exceeding {max_time}s"
+                            assert result is not None
 
 
 @pytest.mark.performance
@@ -58,6 +65,7 @@ async def test_agent_execution_time(large_transcript):
 async def test_orchestrator_parallel_execution(temp_storage_dir, mock_transcription_result):
     """Test orchestrator performance with multiple agents."""
     transcription_service = MagicMock()
+    # transcribe is a regular method (not async) that returns TranscriptionResult
     transcription_service.transcribe = MagicMock(return_value=mock_transcription_result)
     
     agents = [
@@ -75,23 +83,28 @@ async def test_orchestrator_parallel_execution(temp_storage_dir, mock_transcript
     
     with patch('src.agents.topic_agent.get_mistral_completion', new_callable=AsyncMock) as mock_topic:
         with patch('src.agents.summary_agent.get_mistral_completion', new_callable=AsyncMock) as mock_summary:
-            mock_topic.return_value = '[{"topic": "Test", "keywords": ["test"], "summary": "Test"}]'
-            mock_summary.side_effect = ["Test summary", "- Test bullet"]
-            
-            audio_path = temp_storage_dir / "test_audio.wav"
-            audio_path.touch()
-            
-            start_time = time.time()
-            result = await orchestrator.process(
-                meeting_id="perf_test",
-                audio_path=audio_path
-            )
-            elapsed = time.time() - start_time
-            
-            # Should complete within reasonable time (30 seconds for all agents)
-            max_time = 30.0
-            assert elapsed < max_time, f"Orchestrator took {elapsed:.2f}s, exceeding {max_time}s"
-            assert result is not None
+            with patch('src.agents.action_item_agent.get_mistral_completion', new_callable=AsyncMock) as mock_action:
+                with patch.object(DecisionAgent, '_extract_with_groq', new_callable=AsyncMock) as mock_decision:
+                    with patch.object(SentimentAgent, '_analyze_sentiment_hf', return_value=None):
+                        mock_topic.return_value = '[{"topic": "Test", "keywords": ["test"], "summary": "Test"}]'
+                        mock_summary.side_effect = ["Test summary", "- Test bullet"]
+                        mock_action.return_value = "- Action: Test action\n  Assignee: Test\n  Due: Test"
+                        mock_decision.return_value = [{"decision": "Test decision"}]
+                        
+                        audio_path = temp_storage_dir / "test_audio.wav"
+                        audio_path.touch()
+                        
+                        start_time = time.time()
+                        result = await orchestrator.process(
+                            meeting_id="perf_test",
+                            audio_path=audio_path
+                        )
+                        elapsed = time.time() - start_time
+                        
+                        # Should complete within reasonable time (30 seconds for all agents)
+                        max_time = 30.0
+                        assert elapsed < max_time, f"Orchestrator took {elapsed:.2f}s, exceeding {max_time}s"
+                        assert result is not None
 
 
 @pytest.mark.performance
