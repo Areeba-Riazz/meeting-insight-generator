@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: meeting-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: meeting_insights
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meeting-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: meeting-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # DB connection
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/meeting_insights
+      
+      # LLM Configuration 
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      MODEL_TYPE: mistral
+      
+      # Whisper settings
+      WHISPER_MODEL: small
+      WHISPER_DEVICE: cpu
+      
+      # Vector store
+      EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      VECTOR_STORE_PATH: /app/storage/vectors
+      
+      # API config
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DEBUG: "true"
+      
+      # Storage
+      STORAGE_BASE_PATH: /app/storage
+      MAX_FILE_SIZE_MB: 500
+      
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+    volumes:
+      - ./backend/storage:/app/storage
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - meeting-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: meeting-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - meeting-network
+
+volumes:
+  postgres_data:
+    driver: local
+  huggingface_cache:
+    driver: local
+
+networks:
+  meeting-network:
+    driver: bridge

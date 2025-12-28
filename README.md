@@ -240,6 +240,58 @@ cd frontend
 npm run lint
 ```
 
+## 🐳 Docker Deployment
+
+This project uses Docker for containerized deployment of the full stack (PostgreSQL database, FastAPI backend, and React frontend).
+
+### Prerequisites
+- Docker and Docker Compose installed on your system
+
+### Quick Start with Docker
+
+1. **Clone the repository**
+```bash
+git clone <repository-url>
+cd meeting-insight-generator
+```
+
+2. **Set up environment variables**
+Create a `.env` file in the root directory:
+```env
+# LLM API Keys (optional - uses mock responses if not set)
+MISTRAL_API_KEY=your_mistral_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
+
+# Other configurations are handled by docker-compose.yml
+```
+
+3. **Build and run all services**
+```bash
+docker-compose up --build
+```
+
+This will start:
+- PostgreSQL database on port 5432
+- Backend API on port 8000
+- Frontend on port 5173
+
+4. **Access the application**
+- Frontend: http://localhost:5173
+- Backend API docs: http://localhost:8000/docs
+- Database: Available at localhost:5432 (user: postgres, password: postgres, db: meeting_insights)
+
+### Docker Services Overview
+- **postgres**: PostgreSQL 15 database with persistent volume storage
+- **backend**: Python/FastAPI application with Whisper, LLM agents, and vector search
+- **frontend**: Node.js/React application with Vite development server
+
+### Development Workflow
+- Use `docker-compose up -d` to run in background
+- View logs: `docker-compose logs -f [service_name]`
+- Stop services: `docker-compose down`
+- Rebuild after code changes: `docker-compose up --build`
+
+
 ## 📝 Project Structure
 
 ```
