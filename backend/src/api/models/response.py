@@ -34,3 +34,11 @@ class SearchResponse(BaseModel):
 class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
     response: str = Field(..., description="AI assistant's response")
+    sources: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="RAG sources used to generate the response (if RAG was used)"
+    )
+    used_rag: bool = Field(
+        default=False,
+        description="Whether RAG was used to generate this response"
+    )

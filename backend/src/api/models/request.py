@@ -20,6 +20,10 @@ class SearchRequest(BaseModel):
         default=None,
         description="Filter by specific meeting IDs"
     )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Filter by project ID (UUID) - searches only meetings in this project"
+    )
     min_score: float = Field(
         default=0.0,
         ge=0.0,
@@ -37,4 +41,8 @@ class ChatRequest(BaseModel):
         default=None,
         description="Optional context about the current page/view",
         max_length=1000
+    )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="Project ID (UUID) for project-scoped RAG search"
     )

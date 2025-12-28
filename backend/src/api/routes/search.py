@@ -66,10 +66,19 @@ async def search_meetings(request: SearchRequest) -> SearchResponse:
             logger.warning(f"[Search] Query truncated to 500 characters")
         
         # Perform search
-        logger.info(f"[Search] Searching for: '{query[:50]}...' (top_k={request.top_k})")
+        logger.info(f"[Search] Searching for: '{query[:50]}...' (top_k={request.top_k}, project_id={request.project_id})")
         
         # Get vector store instance (reload to ensure latest data)
         vs = get_vector_store()
+        
+        # Log vector store stats for debugging
+        stats = vs.get_stats()
+        logger.info(f"[Search] Vector store stats: {stats['total_vectors']} total vectors")
+        if request.project_id:
+            # Count vectors with this project_id
+            project_vectors = vs.count_vectors_by_project(request.project_id)
+            logger.info(f"[Search] Vectors with project_id={request.project_id}: {project_vectors}")
+            logger.info(f"[Search] Project breakdown: {stats.get('projects', {})}")
         
         # Get more results than needed for pagination
         search_top_k = request.top_k * request.page_size if request.page_size else request.top_k * 10
@@ -79,8 +88,11 @@ async def search_meetings(request: SearchRequest) -> SearchResponse:
             top_k=search_top_k,
             segment_types=request.segment_types,
             meeting_ids=request.meeting_ids,
+            project_id=request.project_id,
             min_score=request.min_score,
         )
+        
+        logger.info(f"[Search] Found {len(raw_results)} results after filtering (project_id={request.project_id})")
         
         # Apply pagination
         total_results = len(raw_results)

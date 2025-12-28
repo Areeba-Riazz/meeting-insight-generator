@@ -18,7 +18,8 @@ async def get_mistral_completion(
     prompt: str,
     max_tokens: int = 500,
     temperature: float = 0.3,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    system_prompt: Optional[str] = None
 ) -> str:
     """
     Get Mistral AI completions with automatic retry on connection errors.
@@ -42,12 +43,18 @@ async def get_mistral_completion(
         
         client = Mistral(api_key=api_key)
         
+        # Build messages array with system prompt if provided
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
         # Mistral API call with timeout handling
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.complete,
                 model="mistral-small-latest",
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens
             ),
@@ -67,7 +74,7 @@ async def get_mistral_completion(
         logger.error(f"[LLMClient] Mistral API connection error: {e}")
         return "Connection to AI service lost - please try again"
     except Exception as e:
-        logger.error(f"[LLMClient] Mistral API error: {e}")
+        logger.error(f"[LLMClient] Mistral API error: {e}", exc_info=True)
         return f"Error generating AI insights: {str(e)}"
 
 
@@ -88,6 +95,14 @@ class LLMClient:
             return self._llm
 
         if self.settings.model_type == "mistral":
+            # Try to get API key from settings or environment
+            api_key = self.settings.mistral_api_key or os.getenv("MISTRAL_API_KEY")
+            
+            if not api_key:
+                logger.warning("[LLMClient] No MISTRAL_API_KEY found in settings or environment")
+                self._llm = None
+                return None
+            
             try:
                 from langchain_community.chat_models import ChatMistralAI
 
@@ -96,12 +111,18 @@ class LLMClient:
                     temperature=self.settings.temperature,
                     max_tokens=self.settings.max_tokens,
                     timeout=self.settings.timeout,
-                    api_key=self.settings.mistral_api_key,
+                    api_key=api_key,
                 )
+                logger.info("[LLMClient] Successfully loaded ChatMistralAI")
                 return self._llm
+            except ImportError as e:
+                logger.error(f"[LLMClient] Failed to import ChatMistralAI: {e}. Install with: pip install langchain-community")
+                self._llm = None
+                return None
             except Exception as e:
-                logger.warning(f"[LLMClient] Failed to load ChatMistralAI: {e}")
-                pass
+                logger.error(f"[LLMClient] Failed to load ChatMistralAI: {e}", exc_info=True)
+                self._llm = None
+                return None
 
         # Fallback to mock
         self._llm = None
@@ -115,6 +136,23 @@ class LLMClient:
         """
         llm = self._load_llm()
         if llm is None:
+            # Try using direct Mistral API as fallback
+            api_key = self.settings.mistral_api_key or os.getenv("MISTRAL_API_KEY")
+            if api_key:
+                logger.info("[LLMClient] LangChain LLM not available, using direct Mistral API")
+                try:
+                    system_prompt = kwargs.get("system_prompt")
+                    return await get_mistral_completion(
+                        prompt=prompt,
+                        max_tokens=self.settings.max_tokens,
+                        temperature=self.settings.temperature,
+                        api_key=api_key,
+                        system_prompt=system_prompt
+                    )
+                except Exception as e:
+                    logger.error(f"[LLMClient] Direct Mistral API also failed: {e}", exc_info=True)
+            
+            logger.warning("[LLMClient] No LLM available, returning mock response. Set MISTRAL_API_KEY environment variable.")
             return f"[LLM mock] {prompt[:200]}..."
 
         try:
@@ -141,5 +179,5 @@ class LLMClient:
                 return f"[LLM connection error fallback] {prompt[:200]}..."
                 
         except Exception as e:
-            logger.error(f"[LLMClient] Unexpected error: {e}")
+            logger.error(f"[LLMClient] Unexpected error: {e}", exc_info=True)
             return f"[LLM error fallback] {prompt[:200]}..."

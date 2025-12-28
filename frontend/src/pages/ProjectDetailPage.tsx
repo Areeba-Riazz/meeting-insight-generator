@@ -16,9 +16,9 @@ import {
   Trash2,
   Loader2,
   Clock,
+  FileVideo,
   CheckCircle2,
   AlertCircle,
-  FileVideo,
 } from "lucide-react";
 
 export default function ProjectDetailPage() {
@@ -77,6 +77,7 @@ export default function ProjectDetailPage() {
       setDeletingId(null);
     }
   };
+
 
   const formatDate = (dateString: string) => {
     try {
@@ -544,7 +545,10 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
-      <FloatingChat context={project ? `Viewing project: ${project.name}. ${project.description || ""}` : undefined} />
+      <FloatingChat 
+        context={project ? `Viewing project: ${project.name}. ${project.description || ""}` : undefined}
+        projectId={projectId}
+      />
     </div>
   );
 }

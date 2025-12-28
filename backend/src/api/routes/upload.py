@@ -176,6 +176,7 @@ async def process_meeting(
     audio_path: Path,
     meeting_uuid: Optional[uuid.UUID] = None,
     db: Optional[AsyncSession] = None,
+    project_id: Optional[str] = None,
 ) -> None:
     """
     Process meeting with robust error handling and connection resilience.
@@ -326,6 +327,17 @@ async def process_meeting(
             if isinstance(summary, str) and summary.startswith("error"):
                 summary = None
             
+            # Use project_id if provided, otherwise try to get it from database
+            project_id_str = project_id
+            if not project_id_str and meeting_uuid and db:
+                try:
+                    db_service = DatabaseService(db)
+                    meeting = await db_service.get_meeting(meeting_uuid)
+                    if meeting and meeting.project_id:
+                        project_id_str = str(meeting.project_id)
+                except Exception as e:
+                    logger.warning(f"[Upload] Could not get project_id for meeting {meeting_uuid}: {e}")
+            
             vectors_added = vector_store.add_meeting_embeddings(
                 meeting_id=meeting_id,
                 transcript=transcript_data,
@@ -333,8 +345,9 @@ async def process_meeting(
                 decisions=decisions if isinstance(decisions, list) else None,
                 action_items=action_items if isinstance(action_items, list) else None,
                 summary=summary if summary else None,
+                project_id=project_id_str,
             )
-            logger.info(f"[Upload] Added {vectors_added} vectors to vector store for {meeting_id}")
+            logger.info(f"[Upload] Added {vectors_added} vectors to vector store for {meeting_id} (project_id: {project_id_str})")
         except Exception as e:
             logger.warning(f"[Upload] Error adding vectors to vector store: {e}")
             # Non-critical error - continue anyway
@@ -359,13 +372,14 @@ async def process_meeting_with_db(
     meeting_id: str,
     audio_path: Path,
     meeting_uuid: uuid.UUID,
+    project_id: Optional[str] = None,
 ) -> None:
     """Wrapper to process meeting with database session."""
     from src.core.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
         try:
-            await process_meeting(meeting_id, audio_path, meeting_uuid, db)
+            await process_meeting(meeting_id, audio_path, meeting_uuid, db, project_id)
         except Exception as e:
             logger.error(f"[Upload] Error in process_meeting_with_db: {e}", exc_info=True)
             # Update meeting status to error
@@ -623,6 +637,7 @@ async def upload_meeting_file(
         pipeline_store.set_status(meeting_id, "uploading", progress=100, stage="Upload complete")
         
         # Pass database session and meeting UUID to process_meeting if available
+        project_id_str = str(project_uuid) if project_uuid else None
         if meeting_uuid and db:
             # Create a new session for background task
             from src.core.database import AsyncSessionLocal
@@ -631,9 +646,10 @@ async def upload_meeting_file(
                 meeting_id,
                 audio_path,
                 meeting_uuid,
+                project_id_str,
             )
         else:
-            background_tasks.add_task(process_meeting, meeting_id, audio_path)
+            background_tasks.add_task(process_meeting, meeting_id, audio_path, None, None, project_id_str)
         
         logger.info(f"[Upload] File uploaded successfully for {meeting_id}, starting background processing")
         return {

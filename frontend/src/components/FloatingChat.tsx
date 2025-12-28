@@ -7,13 +7,21 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  sources?: Array<{
+    meeting_id: string;
+    segment_type: string;
+    text: string;
+    similarity?: number;
+  }>;
+  used_rag?: boolean;
 }
 
 interface FloatingChatProps {
   context?: string; // Optional context about the current page/view
+  projectId?: string; // Optional project ID for project-scoped RAG search
 }
 
-export function FloatingChat({ context }: FloatingChatProps) {
+export function FloatingChat({ context, projectId }: FloatingChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -57,15 +65,17 @@ export function FloatingChat({ context }: FloatingChatProps) {
     setIsLoading(true);
 
     try {
-      // Send to API
-      const response = await sendChatMessage(message, context);
+      // Send to API with project context for RAG
+      const response = await sendChatMessage(message, context, projectId);
       
-      // Add assistant response
+      // Add assistant response with sources if available
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: response.response,
         timestamp: new Date(),
+        sources: response.sources,
+        used_rag: response.used_rag,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -225,7 +235,9 @@ export function FloatingChat({ context }: FloatingChatProps) {
               </div>
               <div>
                 <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>AI Assistant</div>
-                <div style={{ fontSize: "0.75rem", opacity: 0.9 }}>Ask me anything</div>
+                <div style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+                  {projectId ? "Project-scoped RAG enabled" : "Ask me anything"}
+                </div>
               </div>
             </div>
             <button
@@ -292,6 +304,43 @@ export function FloatingChat({ context }: FloatingChatProps) {
                   }}
                 >
                   {message.content}
+                  {message.sources && message.sources.length > 0 && (
+                    <div style={{
+                      marginTop: '0.75rem',
+                      paddingTop: '0.75rem',
+                      borderTop: message.role === 'assistant' ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                      fontSize: '0.75rem',
+                      opacity: 0.8,
+                    }}>
+                      <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+                        📚 Sources ({message.sources.length}):
+                      </div>
+                      {message.sources.map((source, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            marginBottom: '0.5rem',
+                            padding: '0.5rem',
+                            background: message.role === 'assistant' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.1)',
+                            borderRadius: '6px',
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>
+                            {source.segment_type.replace('_', ' ').toUpperCase()} • Meeting: {source.meeting_id.split('_')[0].replace(/-/g, ' ')}
+                            {source.similarity && (
+                              <span style={{ marginLeft: '0.5rem', opacity: 0.7 }}>
+                                ({Math.round(source.similarity * 100)}% match)
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ opacity: 0.8, fontStyle: 'italic' }}>
+                            "{source.text}..."
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

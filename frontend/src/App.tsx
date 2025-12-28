@@ -4,7 +4,6 @@ import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import UploadPage from "./pages/UploadPage";
 import InsightsPage from "./pages/InsightsPage";
-import SearchPage from "./pages/SearchPage";
 
 export default function App() {
   return (
@@ -15,7 +14,6 @@ export default function App() {
         <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="/projects/:projectId/upload" element={<UploadPage />} />
         <Route path="/upload" element={<UploadPage />} />
-        <Route path="/search" element={<SearchPage />} />
         <Route path="/insights/:meetingId" element={<InsightsPage />} />
         <Route path="/insights/preview" element={<InsightsPage />} />
       </Routes>

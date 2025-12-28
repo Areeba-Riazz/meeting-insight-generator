@@ -253,22 +253,31 @@ export async function deleteProjectMeeting(
 export interface ChatRequest {
   message: string;
   context?: string;
+  project_id?: string;
 }
 
 export interface ChatResponse {
   response: string;
+  sources?: Array<{
+    meeting_id: string;
+    segment_type: string;
+    text: string;
+    similarity?: number;
+  }>;
+  used_rag?: boolean;
 }
 
 export async function sendChatMessage(
   message: string,
-  context?: string
+  context?: string,
+  project_id?: string
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/api/v1/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message, context }),
+    body: JSON.stringify({ message, context, project_id }),
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: res.statusText }));

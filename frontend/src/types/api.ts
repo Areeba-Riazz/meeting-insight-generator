@@ -67,6 +67,7 @@ export type SearchRequest = {
   top_k?: number;
   segment_types?: string[];
   meeting_ids?: string[];
+  project_id?: string;
   min_score?: number;
   page?: number;
   page_size?: number;

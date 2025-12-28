@@ -22,6 +22,7 @@ class VectorMetadata:
     timestamp: Optional[float] = None
     segment_index: Optional[int] = None
     additional_data: Optional[Dict[str, Any]] = None  # For agent-specific data
+    project_id: Optional[str] = None  # Project UUID (optional for backward compatibility)
 
 
 class VectorStoreService:
@@ -183,6 +184,7 @@ class VectorStoreService:
         decisions: Optional[List[Dict[str, Any]]] = None,
         action_items: Optional[List[Dict[str, Any]]] = None,
         summary: Optional[str] = None,
+        project_id: Optional[str] = None,
     ) -> int:
         """
         Add embeddings for all content from a meeting.
@@ -214,6 +216,7 @@ class VectorStoreService:
                         text=chunk,
                         timestamp=timestamp,
                         segment_index=segment_index,
+                        project_id=project_id,
                     )
                     self._add_vector(metadata)
                     vectors_added += 1
@@ -232,6 +235,7 @@ class VectorStoreService:
                         text=combined_text,
                         timestamp=topic.get("start_time"),
                         segment_index=topic_idx,
+                        project_id=project_id,
                         additional_data={
                             "topic": topic_text,
                             "description": topic_description,
@@ -254,6 +258,7 @@ class VectorStoreService:
                         text=combined_text,
                         timestamp=decision.get("timestamp"),
                         segment_index=decision_idx,
+                        project_id=project_id,
                         additional_data={
                             "decision": decision_text,
                             "context": context,
@@ -279,6 +284,7 @@ class VectorStoreService:
                         text=combined_text,
                         timestamp=action.get("timestamp"),
                         segment_index=action_idx,
+                        project_id=project_id,
                         additional_data={
                             "action": action_text,
                             "assignee": assignee,
@@ -301,6 +307,7 @@ class VectorStoreService:
                     meeting_id=meeting_id,
                     segment_type="summary",
                     text=summary_text,
+                    project_id=project_id,
                     additional_data={"type": "executive_summary"} if isinstance(summary, dict) else None,
                 )
                 self._add_vector(metadata)
@@ -333,6 +340,7 @@ class VectorStoreService:
         top_k: int = 10,
         segment_types: Optional[List[str]] = None,
         meeting_ids: Optional[List[str]] = None,
+        project_id: Optional[str] = None,
         min_score: float = 0.0,
     ) -> List[Dict[str, Any]]:
         """
@@ -343,6 +351,7 @@ class VectorStoreService:
             top_k: Number of results to return
             segment_types: Filter by segment types (e.g., ['decision', 'action_item'])
             meeting_ids: Filter by meeting IDs
+            project_id: Filter by project ID (UUID string)
             min_score: Minimum similarity score (0-1, lower is more similar for L2)
         
         Returns:
@@ -369,6 +378,7 @@ class VectorStoreService:
         
         # Process results
         results = []
+        filtered_count = 0
         for idx, distance in zip(indices[0], distances[0]):
             if idx >= len(self.metadata_list):
                 continue
@@ -377,9 +387,20 @@ class VectorStoreService:
             
             # Apply filters
             if segment_types and metadata.segment_type not in segment_types:
+                filtered_count += 1
                 continue
             if meeting_ids and metadata.meeting_id not in meeting_ids:
+                filtered_count += 1
                 continue
+            if project_id is not None:
+                # Filter by project_id - only include vectors that match the project_id
+                # Vectors with project_id=None (old vectors) are excluded from project-scoped searches
+                # Normalize both to strings for comparison
+                metadata_pid = str(metadata.project_id) if metadata.project_id is not None else None
+                search_pid = str(project_id) if project_id is not None else None
+                if metadata_pid != search_pid:
+                    filtered_count += 1
+                    continue
             
             # Convert L2 distance to similarity score (lower distance = higher similarity)
             # Normalize to 0-1 range (inverse of normalized distance)
@@ -407,7 +428,10 @@ class VectorStoreService:
         # Sort by similarity (highest first)
         results.sort(key=lambda x: x["similarity_score"], reverse=True)
         
-        logger.info(f"[VectorStore] Search for '{query[:50]}...' returned {len(results)} results")
+        logger.info(
+            f"[VectorStore] Search for '{query[:50]}...' returned {len(results)} results "
+            f"(filtered out {filtered_count}, project_id={project_id})"
+        )
         return results
 
     def get_meeting_vectors_count(self, meeting_id: str) -> int:
@@ -467,6 +491,7 @@ class VectorStoreService:
         
         meetings = {}
         segment_types = {}
+        projects = {}
         
         for metadata in self.metadata_list:
             # Count by meeting
@@ -474,11 +499,22 @@ class VectorStoreService:
             
             # Count by segment type
             segment_types[metadata.segment_type] = segment_types.get(metadata.segment_type, 0) + 1
+            
+            # Count by project
+            project_key = metadata.project_id if metadata.project_id else "none"
+            projects[project_key] = projects.get(project_key, 0) + 1
         
         return {
             "total_vectors": len(self.metadata_list),
             "embedding_dimension": self.index.d if hasattr(self.index, 'd') else None,
             "meetings": meetings,
             "segment_types": segment_types,
+            "projects": projects,
         }
+    
+    def count_vectors_by_project(self, project_id: str) -> int:
+        """Count vectors for a specific project."""
+        if project_id is None:
+            return 0
+        return sum(1 for md in self.metadata_list if md.project_id == project_id)
 

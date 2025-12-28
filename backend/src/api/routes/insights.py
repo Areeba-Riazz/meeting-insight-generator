@@ -1,8 +1,12 @@
+import json
 import uuid
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
+from src.models.db_models import Meeting
 from src.services.database_service import DatabaseService
 from src.api.routes.upload import pipeline_store
 
@@ -14,22 +18,81 @@ async def get_insights(
     meeting_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get insights for a meeting (supports both UUID and legacy meeting_id)."""
     # Try to parse as UUID first
     try:
         meeting_uuid = uuid.UUID(meeting_id)
     except ValueError:
-        # Legacy meeting_id format - try in-memory store first
+        # Legacy meeting_id format (folder name) - try database first by file_path
+        db_service = DatabaseService(db)
+        
+        # Try to find meeting in database by file_path (contains the legacy meeting_id)
+        # file_path format is: "meeting_id/audio/filename.mp4" or "meeting_id\audio\filename.mp4"
+        # Use SQL LIKE to match either forward or backward slashes
+        result = await db.execute(
+            select(Meeting).where(
+                or_(
+                    Meeting.file_path.like(f"{meeting_id}/%"),
+                    Meeting.file_path.like(f"{meeting_id}\\%")
+                )
+            )
+        )
+        db_meeting = result.scalar_one_or_none()
+        
+        if db_meeting:
+            # Found in database, load insights from database
+            insights = await db_service.get_all_insights(db_meeting.id)
+            if insights:
+                return {
+                    "meeting_id": str(db_meeting.id),
+                    "insights": insights,
+                    "legacy_meeting_id": meeting_id,
+                    "file_path": db_meeting.file_path,
+                    "original_filename": db_meeting.original_filename,
+                }
+        
+        # Try in-memory store
         result = pipeline_store.get_result(meeting_id)
         if result:
             return {
                 "meeting_id": meeting_id,
                 "insights": result,
-                "legacy_meeting_id": meeting_id,  # Already in legacy format
+                "legacy_meeting_id": meeting_id,
             }
+        
+        # Fallback to storage folder
+        storage_path = Path("storage") / meeting_id
+        insights_file = storage_path / "insights.json"
+        if insights_file.exists():
+            try:
+                with open(insights_file, "r", encoding="utf-8") as f:
+                    insights = json.load(f)
+                
+                # Get metadata for original_filename
+                metadata_file = storage_path / "metadata.json"
+                original_filename = None
+                if metadata_file.exists():
+                    try:
+                        with open(metadata_file, "r", encoding="utf-8") as mf:
+                            metadata = json.load(mf)
+                            original_filename = metadata.get("file_info", {}).get("original_filename")
+                    except Exception:
+                        pass
+                
+                return {
+                    "meeting_id": meeting_id,
+                    "insights": insights,
+                    "legacy_meeting_id": meeting_id,
+                    "original_filename": original_filename,
+                }
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error reading insights file: {str(e)}"
+                )
+        
         raise HTTPException(
             status_code=404,
-            detail="Meeting not found. Please use UUID format for database meetings.",
+            detail=f"Meeting not found: {meeting_id}. Checked database, in-memory store, and storage folder.",
         )
 
     # Load from database
@@ -41,6 +104,33 @@ async def get_insights(
         result = pipeline_store.get_result(meeting_id)
         if result:
             return {"meeting_id": meeting_id, "insights": result}
+        
+        # Also try to find by UUID in storage metadata files
+        storage_path = Path("storage")
+        if storage_path.exists():
+            for meeting_dir in storage_path.iterdir():
+                if not meeting_dir.is_dir():
+                    continue
+                metadata_file = meeting_dir / "metadata.json"
+                if metadata_file.exists():
+                    try:
+                        with open(metadata_file, "r", encoding="utf-8") as mf:
+                            metadata = json.load(mf)
+                            if metadata.get("uuid") == str(meeting_uuid):
+                                # Found matching UUID, load insights
+                                insights_file = meeting_dir / "insights.json"
+                                if insights_file.exists():
+                                    with open(insights_file, "r", encoding="utf-8") as f:
+                                        insights = json.load(f)
+                                    return {
+                                        "meeting_id": str(meeting_uuid),
+                                        "insights": insights,
+                                        "legacy_meeting_id": meeting_dir.name,
+                                        "original_filename": metadata.get("file_info", {}).get("original_filename"),
+                                    }
+                    except Exception:
+                        continue
+        
         raise HTTPException(status_code=404, detail="Meeting not found")
 
     # Get all insights from database
