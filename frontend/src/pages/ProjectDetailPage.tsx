@@ -8,8 +8,9 @@ import {
   getProject,
   getProjectMeetings,
   deleteProjectMeeting,
+  searchMeetings,
 } from "../api/client";
-import type { Project, ProjectMeeting } from "../types/api";
+import type { Project, ProjectMeeting, SearchResponse, SearchResult } from "../types/api";
 import {
   ArrowLeft,
   Plus,
@@ -19,6 +20,13 @@ import {
   FileVideo,
   CheckCircle2,
   AlertCircle,
+  Search,
+  FileText,
+  MessageSquare,
+  CheckCircle,
+  ListTodo,
+  FileSearch,
+  X,
 } from "lucide-react";
 
 export default function ProjectDetailPage() {
@@ -29,6 +37,12 @@ export default function ProjectDetailPage() {
   const [meetings, setMeetings] = useState<ProjectMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   useEffect(() => {
     if (projectId) {
@@ -78,6 +92,40 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || !projectId) return;
+
+    setIsSearching(true);
+    try {
+      const results = await searchMeetings({
+        query: searchQuery.trim(),
+        project_id: projectId,
+        top_k: 50,
+        page: 1,
+        page_size: 10,
+      });
+      setSearchResults(results);
+      setShowSearchResults(true);
+    } catch (err: any) {
+      showError(err?.message || "Search failed");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const formatTimestamp = (timestamp: number) => {
+    const minutes = Math.floor(timestamp / 60);
+    const seconds = Math.floor(timestamp % 60);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  const SEGMENT_TYPE_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+    transcript: { label: "Transcript", icon: <FileText size={16} />, color: "#3b82f6" },
+    topic: { label: "Topic", icon: <MessageSquare size={16} />, color: "#8b5cf6" },
+    decision: { label: "Decision", icon: <CheckCircle size={16} />, color: "#10b981" },
+    action_item: { label: "Action Item", icon: <ListTodo size={16} />, color: "#f59e0b" },
+    summary: { label: "Summary", icon: <FileSearch size={16} />, color: "#6366f1" },
+  };
 
   const formatDate = (dateString: string) => {
     try {
@@ -321,6 +369,198 @@ export default function ProjectDetailPage() {
             </button>
           </div>
         </div>
+
+        {/* Search Section */}
+        <div style={{ marginBottom: "2rem", animation: "fadeIn 0.4s ease-out" }}>
+          <div style={{
+            background: "white",
+            border: "1px solid #e5e7eb",
+            borderRadius: "12px",
+            padding: "1.5rem",
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+          }}>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+              <div style={{ flex: 1, position: "relative" }}>
+                <Search style={{
+                  position: "absolute",
+                  left: "0.75rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "1.25rem",
+                  height: "1.25rem",
+                  color: "#9ca3af",
+                }} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter" && !isSearching && searchQuery.trim()) {
+                      handleSearch();
+                    }
+                  }}
+                  placeholder="Search meetings in this project..."
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem 0.75rem 0.75rem 2.75rem",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    fontSize: "0.95rem",
+                    outline: "none",
+                    transition: "border-color 0.2s ease",
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "#3b82f6";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "#e5e7eb";
+                  }}
+                />
+              </div>
+              <button
+                onClick={handleSearch}
+                disabled={!searchQuery.trim() || isSearching}
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  background: searchQuery.trim() && !isSearching
+                    ? "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
+                    : "#e5e7eb",
+                  color: searchQuery.trim() && !isSearching ? "white" : "#9ca3af",
+                  border: "none",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: searchQuery.trim() && !isSearching ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 style={{ width: "1rem", height: "1rem", animation: "spin 1s linear infinite" }} />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search style={{ width: "1rem", height: "1rem" }} />
+                    Search
+                  </>
+                )}
+              </button>
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults(null);
+                    setShowSearchResults(false);
+                  }}
+                  style={{
+                    padding: "0.75rem",
+                    background: "transparent",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <X style={{ width: "1rem", height: "1rem", color: "#6b7280" }} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Search Results */}
+        {showSearchResults && searchResults && (
+          <div style={{ marginBottom: "2rem", animation: "fadeIn 0.4s ease-out" }}>
+            <div style={{
+              background: "white",
+              border: "1px solid #e5e7eb",
+              borderRadius: "12px",
+              padding: "1.5rem",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <h3 style={{ fontSize: "1.125rem", fontWeight: 600, color: "#111827" }}>
+                  Search Results ({searchResults.total_results})
+                </h3>
+                <button
+                  onClick={() => setShowSearchResults(false)}
+                  style={{
+                    padding: "0.5rem",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X style={{ width: "1rem", height: "1rem", color: "#6b7280" }} />
+                </button>
+              </div>
+              {searchResults.results.length === 0 ? (
+                <div style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>
+                  No results found
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {searchResults.results.map((result: SearchResult, idx: number) => {
+                    const segmentInfo = SEGMENT_TYPE_LABELS[result.segment_type] || { 
+                      label: result.segment_type, 
+                      icon: <FileText size={16} />, 
+                      color: "#6b7280" 
+                    };
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => navigate(`/insights/${result.meeting_id}`)}
+                        style={{
+                          padding: "1rem",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#3b82f6";
+                          e.currentTarget.style.background = "#f9fafb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "#e5e7eb";
+                          e.currentTarget.style.background = "white";
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "0.5rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <span style={{ color: segmentInfo.color, display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", fontWeight: 600 }}>
+                              {segmentInfo.icon} {segmentInfo.label}
+                            </span>
+                            <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                              Meeting: {result.meeting_id.split('_')[0].replace(/-/g, ' ')}
+                            </span>
+                            {result.timestamp && (
+                              <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                                @{formatTimestamp(result.timestamp)}
+                              </span>
+                            )}
+                            <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                              {Math.round(result.similarity_score * 100)}% match
+                            </span>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: "0.9rem", color: "#374151", lineHeight: 1.5 }}>
+                          {result.text.length > 300 ? `${result.text.substring(0, 300)}...` : result.text}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Meetings List */}
         {loading ? (
