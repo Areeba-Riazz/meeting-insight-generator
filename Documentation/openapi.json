@@ -1,0 +1,1400 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Meeting Insight Generator API",
+        "version": "0.1.0"
+    },
+    "paths": {
+        "/api/v1/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health",
+                "operationId": "health_api_v1_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/projects": {
+            "post": {
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Create Project",
+                "description": "Create a new project.",
+                "operationId": "create_project_api_v1_projects_post",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateProjectRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "tags": [
+                    "projects"
+                ],
+                "summary": "List Projects",
+                "description": "List all projects.",
+                "operationId": "list_projects_api_v1_projects_get",
+                "parameters": [
+                    {
+                        "name": "skip",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0,
+                            "title": "Skip"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/projects/{project_id}": {
+            "get": {
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Get Project",
+                "description": "Get project by ID.",
+                "operationId": "get_project_api_v1_projects__project_id__get",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Update Project",
+                "description": "Update project.",
+                "operationId": "update_project_api_v1_projects__project_id__put",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateProjectRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "projects"
+                ],
+                "summary": "Delete Project",
+                "description": "Delete project (cascades to meetings).",
+                "operationId": "delete_project_api_v1_projects__project_id__delete",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/projects/{project_id}/meetings": {
+            "get": {
+                "tags": [
+                    "project-meetings"
+                ],
+                "summary": "List Project Meetings",
+                "description": "List all meetings in a project.",
+                "operationId": "list_project_meetings_api_v1_projects__project_id__meetings_get",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    },
+                    {
+                        "name": "skip",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0,
+                            "title": "Skip"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Status"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectMeetingsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/projects/{project_id}/meetings/{meeting_id}": {
+            "get": {
+                "tags": [
+                    "project-meetings"
+                ],
+                "summary": "Get Project Meeting",
+                "description": "Get meeting details.",
+                "operationId": "get_project_meeting_api_v1_projects__project_id__meetings__meeting_id__get",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    },
+                    {
+                        "name": "meeting_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Meeting Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectMeetingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "project-meetings"
+                ],
+                "summary": "Delete Project Meeting",
+                "description": "Delete meeting (cascades to insights).",
+                "operationId": "delete_project_meeting_api_v1_projects__project_id__meetings__meeting_id__delete",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Project Id"
+                        }
+                    },
+                    {
+                        "name": "meeting_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Meeting Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/upload": {
+            "post": {
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Upload Meeting File",
+                "description": "Upload meeting audio file with connection error handling.\n\nHandles:\n- File read/write errors with retries\n- Validation failures with cleanup\n- Graceful error responses",
+                "operationId": "upload_meeting_file_api_v1_upload_post",
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "description": "Project UUID (optional)",
+                            "title": "Project Id"
+                        },
+                        "description": "Project UUID (optional)"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Body_upload_meeting_file_api_v1_upload_post"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/status/{meeting_id}": {
+            "get": {
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Get Status",
+                "description": "Get processing status for a meeting (supports both UUID and legacy meeting_id).",
+                "operationId": "get_status_api_v1_status__meeting_id__get",
+                "parameters": [
+                    {
+                        "name": "meeting_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Meeting Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/insights/{meeting_id}": {
+            "get": {
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "Get Insights",
+                "operationId": "get_insights_api_v1_insights__meeting_id__get",
+                "parameters": [
+                    {
+                        "name": "meeting_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Meeting Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/meetings": {
+            "get": {
+                "tags": [
+                    "pipeline"
+                ],
+                "summary": "List Meetings",
+                "description": "List all previous meetings from storage folder.",
+                "operationId": "list_meetings_api_v1_meetings_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/search": {
+            "post": {
+                "tags": [
+                    "search"
+                ],
+                "summary": "Search Meetings",
+                "description": "Perform semantic search across all meeting content.\n\nSearches through:\n- Meeting transcripts (chunked)\n- Topics\n- Decisions\n- Action items\n- Summaries\n\nReturns results ranked by semantic similarity.",
+                "operationId": "search_meetings_api_v1_search_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SearchRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SearchResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/search/stats": {
+            "get": {
+                "tags": [
+                    "search"
+                ],
+                "summary": "Get Search Stats",
+                "description": "Get statistics about the vector store.",
+                "operationId": "get_search_stats_api_v1_search_stats_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "additionalProperties": true,
+                                    "type": "object",
+                                    "title": "Response Get Search Stats Api V1 Search Stats Get"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/chat": {
+            "post": {
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Chat",
+                "description": "Chat with the LLM using RAG (Retrieval Augmented Generation).\n\nAccepts a message, optional context, and optional project_id.\nPerforms semantic search on meeting content, then generates LLM response with retrieved context.",
+                "operationId": "chat_api_v1_chat_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChatRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ChatResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Root",
+                "operationId": "root__get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "additionalProperties": true,
+                                    "type": "object",
+                                    "title": "Response Root  Get"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health",
+                "operationId": "health_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "additionalProperties": true,
+                                    "type": "object",
+                                    "title": "Response Health Health Get"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Metrics",
+                "description": "Prometheus metrics endpoint.",
+                "operationId": "metrics_metrics_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Body_upload_meeting_file_api_v1_upload_post": {
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "format": "binary",
+                        "title": "File"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "file"
+                ],
+                "title": "Body_upload_meeting_file_api_v1_upload_post"
+            },
+            "ChatRequest": {
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "minLength": 1,
+                        "title": "Message",
+                        "description": "User message"
+                    },
+                    "context": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 1000
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Context",
+                        "description": "Optional context about the current page/view"
+                    },
+                    "project_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Project Id",
+                        "description": "Project ID (UUID) for project-scoped RAG search"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "message"
+                ],
+                "title": "ChatRequest",
+                "description": "Request model for chat endpoint."
+            },
+            "ChatResponse": {
+                "properties": {
+                    "response": {
+                        "type": "string",
+                        "title": "Response",
+                        "description": "AI assistant's response"
+                    },
+                    "sources": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "additionalProperties": true,
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sources",
+                        "description": "RAG sources used to generate the response (if RAG was used)"
+                    },
+                    "used_rag": {
+                        "type": "boolean",
+                        "title": "Used Rag",
+                        "description": "Whether RAG was used to generate this response",
+                        "default": false
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "response"
+                ],
+                "title": "ChatResponse",
+                "description": "Response model for chat endpoint."
+            },
+            "CreateProjectRequest": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name"
+                ],
+                "title": "CreateProjectRequest"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "HealthResponse": {
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "title": "Status",
+                        "default": "ok"
+                    }
+                },
+                "type": "object",
+                "title": "HealthResponse"
+            },
+            "ProjectListResponse": {
+                "properties": {
+                    "projects": {
+                        "items": {
+                            "$ref": "#/components/schemas/ProjectResponse"
+                        },
+                        "type": "array",
+                        "title": "Projects"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "projects",
+                    "total"
+                ],
+                "title": "ProjectListResponse"
+            },
+            "ProjectMeetingResponse": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Project Id"
+                    },
+                    "meeting_name": {
+                        "type": "string",
+                        "title": "Meeting Name"
+                    },
+                    "original_filename": {
+                        "type": "string",
+                        "title": "Original Filename"
+                    },
+                    "file_size_bytes": {
+                        "type": "integer",
+                        "title": "File Size Bytes"
+                    },
+                    "content_type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Content Type"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "upload_timestamp": {
+                        "type": "string",
+                        "title": "Upload Timestamp"
+                    },
+                    "processing_completed_at": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Processing Completed At"
+                    },
+                    "has_insights": {
+                        "type": "boolean",
+                        "title": "Has Insights"
+                    },
+                    "has_transcript": {
+                        "type": "boolean",
+                        "title": "Has Transcript"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "project_id",
+                    "meeting_name",
+                    "original_filename",
+                    "file_size_bytes",
+                    "content_type",
+                    "status",
+                    "upload_timestamp",
+                    "processing_completed_at",
+                    "has_insights",
+                    "has_transcript"
+                ],
+                "title": "ProjectMeetingResponse"
+            },
+            "ProjectMeetingsResponse": {
+                "properties": {
+                    "meetings": {
+                        "items": {
+                            "$ref": "#/components/schemas/ProjectMeetingResponse"
+                        },
+                        "type": "array",
+                        "title": "Meetings"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "meetings",
+                    "total"
+                ],
+                "title": "ProjectMeetingsResponse"
+            },
+            "ProjectResponse": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "title": "Created At"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "title": "Updated At"
+                    },
+                    "meetings_count": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Meetings Count"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "ProjectResponse"
+            },
+            "SearchRequest": {
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "title": "Query",
+                        "description": "Search query text"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "maximum": 100.0,
+                        "minimum": 1.0,
+                        "title": "Top K",
+                        "description": "Number of results to return",
+                        "default": 10
+                    },
+                    "segment_types": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Segment Types",
+                        "description": "Filter by segment types: transcript, topic, decision, action_item, summary"
+                    },
+                    "meeting_ids": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Meeting Ids",
+                        "description": "Filter by specific meeting IDs"
+                    },
+                    "project_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Project Id",
+                        "description": "Filter by project ID (UUID) - searches only meetings in this project"
+                    },
+                    "min_score": {
+                        "type": "number",
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "title": "Min Score",
+                        "description": "Minimum similarity score (0-1, higher is more similar)",
+                        "default": 0.0
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 1.0,
+                        "title": "Page",
+                        "description": "Page number for pagination",
+                        "default": 1
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "maximum": 100.0,
+                        "minimum": 1.0,
+                        "title": "Page Size",
+                        "description": "Results per page",
+                        "default": 10
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "query"
+                ],
+                "title": "SearchRequest",
+                "description": "Request model for semantic search."
+            },
+            "SearchResponse": {
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "title": "Query",
+                        "description": "The search query that was executed"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/SearchResult"
+                        },
+                        "type": "array",
+                        "title": "Results",
+                        "description": "List of search results"
+                    },
+                    "total_results": {
+                        "type": "integer",
+                        "title": "Total Results",
+                        "description": "Total number of results found"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "title": "Page",
+                        "description": "Current page number"
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "title": "Page Size",
+                        "description": "Results per page"
+                    },
+                    "total_pages": {
+                        "type": "integer",
+                        "title": "Total Pages",
+                        "description": "Total number of pages"
+                    },
+                    "segment_types_filter": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Segment Types Filter",
+                        "description": "Segment types that were filtered"
+                    },
+                    "meeting_ids_filter": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Meeting Ids Filter",
+                        "description": "Meeting IDs that were filtered"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "query",
+                    "results",
+                    "total_results",
+                    "page",
+                    "page_size",
+                    "total_pages"
+                ],
+                "title": "SearchResponse",
+                "description": "Response model for semantic search."
+            },
+            "SearchResult": {
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "title": "Text",
+                        "description": "The text content that matched"
+                    },
+                    "meeting_id": {
+                        "type": "string",
+                        "title": "Meeting Id",
+                        "description": "ID of the meeting this result belongs to"
+                    },
+                    "segment_type": {
+                        "type": "string",
+                        "title": "Segment Type",
+                        "description": "Type of segment: transcript, topic, decision, action_item, summary"
+                    },
+                    "timestamp": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Timestamp",
+                        "description": "Timestamp in seconds if available"
+                    },
+                    "segment_index": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Segment Index",
+                        "description": "Index of the segment within its type"
+                    },
+                    "similarity_score": {
+                        "type": "number",
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "title": "Similarity Score",
+                        "description": "Similarity score (0-1, higher is more similar)"
+                    },
+                    "distance": {
+                        "type": "number",
+                        "title": "Distance",
+                        "description": "L2 distance in embedding space"
+                    },
+                    "additional_data": {
+                        "anyOf": [
+                            {
+                                "additionalProperties": true,
+                                "type": "object"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Additional Data",
+                        "description": "Additional metadata from the segment"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "text",
+                    "meeting_id",
+                    "segment_type",
+                    "similarity_score",
+                    "distance"
+                ],
+                "title": "SearchResult",
+                "description": "Individual search result."
+            },
+            "UpdateProjectRequest": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name"
+                    },
+                    "description": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Description"
+                    }
+                },
+                "type": "object",
+                "title": "UpdateProjectRequest"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        }
+    }
+}
